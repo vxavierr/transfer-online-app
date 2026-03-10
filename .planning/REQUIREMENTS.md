@@ -100,13 +100,44 @@ Requirements for initial release (first client in 30 days).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| NICH-01 | Phase 1 | Pending |
+| NICH-02 | Phase 1 | Pending |
+| NICH-03 | Phase 1 | Pending |
+| NICH-04 | Phase 1 | Pending |
+| NICH-05 | Phase 1 | Pending |
+| RECV-01 | Phase 2 | Pending |
+| RECV-02 | Phase 2 | Pending |
+| RECV-03 | Phase 2 | Pending |
+| SALE-01 | Phase 3 | Pending |
+| SALE-02 | Phase 3 | Pending |
+| SALE-03 | Phase 3 | Pending |
+| SALE-04 | Phase 3 | Pending |
+| SALE-05 | Phase 3 | Pending |
+| INFR-01 | Phase 4 | Pending |
+| INFR-02 | Phase 4 | Pending |
+| INFR-03 | Phase 4 | Pending |
+| CHAT-01 | Phase 5 | Pending |
+| CHAT-02 | Phase 5 | Pending |
+| CHAT-03 | Phase 5 | Pending |
+| CHAT-04 | Phase 5 | Pending |
+| FOLL-01 | Phase 6 | Pending |
+| FOLL-02 | Phase 6 | Pending |
+| FOLL-03 | Phase 6 | Pending |
+| CRM-01 | Phase 6 | Pending |
+| CRM-02 | Phase 6 | Pending |
+| CRM-03 | Phase 6 | Pending |
+| DASH-01 | Phase 7 | Pending |
+| DASH-02 | Phase 7 | Pending |
+| DASH-03 | Phase 7 | Pending |
+| ONBD-01 | Phase 8 | Pending |
+| ONBD-02 | Phase 8 | Pending |
+| ONBD-03 | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27
+- v1 requirements: 32 total (note: file initially stated 27, actual count is 32 — 9 categories x 3-5 reqs each)
+- Mapped to phases: 32
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-10*
-*Last updated: 2026-03-10 after initial definition*
+*Last updated: 2026-03-10 — traceability populated after roadmap creation*

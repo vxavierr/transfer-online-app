@@ -33,7 +33,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can map the customer journey for the chosen niche and name 3+ specific friction points where AI creates measurable value
   4. User has identified at least 2 real gaps in the chosen niche (offer gap, result gap, or experience gap) with supporting evidence
   5. User has validated demand with at least 5 real conversations with decision-makers in the niche before committing
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Candidate generation + Go/No-go gate scoring (6-8 niches down to 3 survivors)
+- [ ] 01-02-PLAN.md — Deep research on 3 survivors (IBGE data, journey maps, gap analysis) + 2x2 matrix ranking
+- [ ] 01-03-PLAN.md — Demand validation (5 real conversations with decision-makers) + final niche declaration
 
 ### Phase 2: Revenue Model & Offer
 **Goal**: Commercial structure fully defined — pricing, recurring value proposition, and contract terms exist before the first sales conversation
@@ -118,7 +123,7 @@ Note: Phase 4 depends on Phase 1 (not Phase 3) — infrastructure setup can begi
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Niche Validation | 0/TBD | Not started | - |
+| 1. Niche Validation | 0/3 | Planning complete | - |
 | 2. Revenue Model & Offer | 0/TBD | Not started | - |
 | 3. Sales System | 0/TBD | Not started | - |
 | 4. Technical Infrastructure | 0/TBD | Not started | - |

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    network_security_config.xml — Transfer Online
+    Criado por: @dev (Dex) — Fase 11 Android Platform Setup
+    Data: 2026-03-13
+
+    Política: HTTPS-only para todos os domínios de produção.
+    localhost é permitido em cleartext apenas para desenvolvimento (live reload).
+    Base44 API e domínios de produção requerem HTTPS estrito.
+-->
+<network-security-config>
+    <!-- Desenvolvimento: localhost permite cleartext para live reload via Vite -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <!-- Alias do localhost do host dentro do emulador Android -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+    <!-- Base44 API — HTTPS only (produção) -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">base44.com</domain>
+        <domain includeSubdomains="true">api.base44.com</domain>
+    </domain-config>
+
+    <!-- Google APIs — HTTPS only -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">maps.googleapis.com</domain>
+    </domain-config>
+
+    <!-- Stripe — HTTPS only -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">stripe.com</domain>
+        <domain includeSubdomains="true">js.stripe.com</domain>
+    </domain-config>
+
+    <!-- Política base: HTTPS-only para todo o restante -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

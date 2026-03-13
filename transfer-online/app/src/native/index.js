@@ -11,6 +11,7 @@
  */
 
 export { default as StorageService } from './services/StorageService';
+export { default as GeoService } from './services/GeoService';
 
 // Hooks nativos (Wave 3b+)
 // export { useGeolocation } from './hooks/useGeolocation';

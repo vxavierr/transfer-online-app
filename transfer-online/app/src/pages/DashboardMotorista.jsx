@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { GeoService } from '@/native';
+import { GeoService, BrowserService, StorageService } from '@/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -92,14 +92,14 @@ export default function DashboardMotorista() {
   useEffect(() => {
     // Solicitar permissão de GPS no início se ainda não foi concedida/solicitada
     const askForGPS = async () => {
-      const hasPermission = localStorage.getItem('gps_permission_granted') === 'true';
+      const hasPermission = await StorageService.get('gps_permission_granted') === 'true';
       if (!hasPermission && GeoService.isAvailable()) {
         try {
           await GeoService.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 });
-          localStorage.setItem('gps_permission_granted', 'true');
+          await StorageService.set('gps_permission_granted', 'true');
         } catch (error) {
           console.warn('GPS request on dashboard denied/error:', error);
-          localStorage.setItem('gps_permission_granted', 'false');
+          await StorageService.set('gps_permission_granted', 'false');
         }
       }
     };
@@ -523,7 +523,7 @@ export default function DashboardMotorista() {
     
     acknowledgeTripMutation.mutate(trip.id);
     
-    window.open(calendarUrl, '_blank');
+    BrowserService.open(calendarUrl, '_blank');
   };
 
   const handleDismissNewTrip = (tripId) => {
@@ -830,7 +830,7 @@ function TripsList({ trips, title, emptyMessage, onViewTrip, onAddToCalendar, sh
       // Usar esquema waze:// para forçar abertura do app
       window.location.href = `waze://?q=${encoded}&navigate=yes`;
     } else {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
+      BrowserService.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
     }
   };
 

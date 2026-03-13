@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { GeoService } from '@/native';
+import { GeoService, BrowserService } from '@/native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -371,7 +371,7 @@ export default function DetalhesViagemMotoristaV2() {
     const message = encodeURIComponent(
       `🚗 *Acompanhe sua viagem em tempo real!*\n\nViagem ${serviceRequest.request_number}\n\n${sharedTimelineUrl}`
     );
-    window.open(`https://wa.me/?text=${message}`, '_blank');
+    BrowserService.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   const handleAddToGoogleCalendar = async () => {
@@ -385,7 +385,7 @@ export default function DetalhesViagemMotoristaV2() {
       });
 
       if (response.data.success) {
-        window.open(response.data.calendarUrl, '_blank');
+        BrowserService.open(response.data.calendarUrl, '_blank');
         setSuccess('✅ Abrindo Google Agenda...');
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -1106,11 +1106,11 @@ export default function DetalhesViagemMotoristaV2() {
         } else {
           url = `https://waze.com/ul?q=${encodeURIComponent(destination)}&navigate=yes`;
         }
-        window.open(url, '_blank');
+        BrowserService.open(url, '_blank');
       }
     } else if (preferredMap === 'google_maps') {
       const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
-      window.open(url, '_blank');
+      BrowserService.open(url, '_blank');
     } else {
       // Internal Map
       setPendingNavigationDestination(destination);
@@ -1466,7 +1466,7 @@ export default function DetalhesViagemMotoristaV2() {
 
                 {(serviceRequest.receptive_performed_by === 'driver' || serviceRequest.receptive_performed_by === 'contracted_company') && serviceRequest.receptive_sign_url && (
                   <Button
-                    onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
+                    onClick={() => BrowserService.open(serviceRequest.receptive_sign_url, '_blank')}
                     size="sm"
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
                   >
@@ -1681,7 +1681,7 @@ export default function DetalhesViagemMotoristaV2() {
                   />
                 </div>
                 <Button
-                  onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
+                  onClick={() => BrowserService.open(serviceRequest.receptive_sign_url, '_blank')}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 text-base font-semibold"
                 >
                   <ExternalLink className="w-5 h-5 mr-2" />

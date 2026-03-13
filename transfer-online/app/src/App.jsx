@@ -6,6 +6,10 @@ import VisualEditAgent from '@/lib/VisualEditAgent'
 import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
 import { BrowserRouter, MemoryRouter, Route, Routes } from 'react-router-dom';
+// ARCH-EXCEPTION: App.jsx importa Capacitor diretamente para bootstrap do router em nível de módulo.
+// Esta é a única exceção permitida — a seleção do Router (MemoryRouter vs BrowserRouter) precisa
+// ocorrer antes da montagem da árvore React, tornando inviável usar src/native como intermediário.
+// Todos os outros componentes DEVEM importar via '@/native'.
 import { Capacitor } from '@capacitor/core';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';

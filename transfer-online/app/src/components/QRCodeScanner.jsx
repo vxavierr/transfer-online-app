@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Camera, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CameraService } from '@/native';
+import { CameraService, isNativePlatform } from '@/native';
 
 /**
  * QRCodeScanner — Componente de scan de QR Code com suporte nativo e web.
@@ -24,7 +23,7 @@ export default function QRCodeScanner({ isOpen, onClose, onScanSuccess }) {
     const [isNativeCapturing, setIsNativeCapturing] = useState(false);
     const scannerRef = useRef(null);
 
-    const isNative = Capacitor.isNativePlatform();
+    const isNative = isNativePlatform();
 
     // Limpa scanner web quando fecha
     useEffect(() => {

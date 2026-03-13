@@ -31,3 +31,9 @@ export { default as BrowserService } from './services/BrowserService';
 // Hooks nativos
 export { useAppLifecycle } from './hooks/useAppLifecycle';
 export { useNetworkStatus } from './hooks/useNetworkStatus';
+
+// Utilitários do Capacitor — re-exportados aqui para evitar imports diretos nos componentes.
+// Componentes DEVEM usar esta camada em vez de importar @capacitor/core diretamente.
+import { Capacitor } from '@capacitor/core';
+export const isNativePlatform = () => Capacitor.isNativePlatform();
+export const isPluginAvailable = (name) => Capacitor.isPluginAvailable(name);

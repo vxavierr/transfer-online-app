@@ -537,12 +537,12 @@ function LayoutContent({ children, currentPageName }) {
       const isSharedPage = currentPageName === 'MeusDados';
       const isEventDetailsPage = currentPageName === 'EventDetails';
       const isHomePage = currentPageName === 'Inicio' || currentPageName === 'Index' || currentPageName === 'Home';
+      // Admin at root path (/) = just logged in. Redirect to dashboard.
+      // Admin at /NovaReserva = navigated intentionally to book a trip. Allow it.
+      const isRootPath = location.pathname === '/';
 
-      if (!isAdminPage && !isPublicPage && !isSharedPage && !isEventDetailsPage) {
+      if ((!isAdminPage && !isPublicPage && !isSharedPage && !isEventDetailsPage) || isHomePage || isRootPath) {
         console.log('[Layout] Redirecionando admin para AdminDashboard');
-        navigate(createPageUrl('AdminDashboard') + location.search, { replace: true });
-      } else if (isHomePage) {
-        console.log('[Layout] Admin na página inicial, redirecionando para AdminDashboard');
         navigate(createPageUrl('AdminDashboard') + location.search, { replace: true });
       }
     }

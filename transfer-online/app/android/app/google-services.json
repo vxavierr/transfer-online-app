@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "181789863585",
+    "project_id": "transfer-online",
+    "storage_bucket": "transfer-online.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:181789863585:android:d185eaee57a19cca764ae0",
+        "android_client_info": {
+          "package_name": "com.transferonline.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3A8WqnTvUPpdNnTjPbJQG9hSuJXOhL6Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

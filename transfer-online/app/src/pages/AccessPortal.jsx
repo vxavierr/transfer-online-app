@@ -99,7 +99,7 @@ export default function AccessPortal() {
 
   // Capturar returnUrl dos query params
   const urlParams = new URLSearchParams(window.location.search);
-  const returnUrl = urlParams.get('returnUrl') || '/';
+  const returnUrl = urlParams.get('returnUrl') || (isNativePlatform() ? '/AdminDashboard' : '/');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

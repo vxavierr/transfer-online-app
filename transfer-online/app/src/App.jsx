@@ -134,7 +134,7 @@ const AuthenticatedApp = () => {
     <Routes>
       <Route path="/" element={
         isNativePlatform()
-          ? <Navigate to="/AccessPortal" replace />
+          ? <Navigate to={isAuthenticated ? "/AdminDashboard" : "/AccessPortal"} replace />
           : <LayoutWrapper currentPageName={mainPageKey}><MainPage /></LayoutWrapper>
       } />
       {Object.entries(Pages).map(([path, Page]) => (

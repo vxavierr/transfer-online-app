@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import {
-  MoreVertical, Phone, MessageCircle, MessageSquare, Plane, User, Car, Trash2,
-  ExternalLink, Loader2, Save, X
+import { 
+  MoreVertical, Phone, MessageCircle, MessageSquare, Plane, User, Car, Trash2, 
+  ExternalLink, Loader2, Save, X 
 } from 'lucide-react';
-import { BrowserService } from '@/native';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,17 +37,17 @@ export default function PassengerActionsMenu({ passenger, request, token, onUpda
   const handleAction = (action) => {
     switch(action) {
       case 'call':
-        if (profileData.phone_number) BrowserService.open(`tel:${profileData.phone_number}`);
+        if (profileData.phone_number) window.open(`tel:${profileData.phone_number}`);
         break;
       case 'whatsapp':
         if (profileData.phone_number) {
             const num = profileData.phone_number.replace(/\D/g, '');
-            BrowserService.open(`https://wa.me/${num}`);
+            window.open(`https://wa.me/${num}`);
         }
         break;
       case 'uber':
         // Link genérico do Uber
-        BrowserService.open('https://m.uber.com/ul/', '_blank');
+        window.open('https://m.uber.com/ul/', '_blank');
         break;
       case 'comment':
         setComment(passenger.notes || '');

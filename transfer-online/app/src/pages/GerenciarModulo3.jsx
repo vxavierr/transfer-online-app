@@ -57,7 +57,7 @@ export default function GerenciarModulo3() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarModulo3';
       }
     };
 

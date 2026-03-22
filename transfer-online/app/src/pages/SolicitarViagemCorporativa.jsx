@@ -51,15 +51,16 @@ import MetaTags from '@/components/seo/MetaTags';
 import { getCorporateOnboardingSteps } from '@/components/corporate/CorporateConstants';
 
 // Lazy load components
-const FlightStatusChecker = React.lazy(() => import('../components/flight/FlightStatusChecker'));
 const OnboardingTutorial = React.lazy(() => import('../components/onboarding/OnboardingTutorial'));
-const LocationAutocomplete = React.lazy(() => import('../components/booking/LocationAutocomplete'));
+const CorporateStep1Tabs = React.lazy(() => import('../components/corporate/CorporateStep1Tabs'));
+const CorporateStep2SupplierSelection = React.lazy(() => import('../components/corporate/CorporateStep2SupplierSelection'));
+const CorporateNotificationsSection = React.lazy(() => import('../components/corporate/CorporateNotificationsSection'));
 const PassengerListManager = React.lazy(() => import('../components/booking/PassengerListManager'));
 const PassengerSelector = React.lazy(() => import('../components/booking/PassengerSelector'));
 const AdditionalPassengersList = React.lazy(() => import('../components/booking/AdditionalPassengersList'));
 const CostCenterAllocation = React.lazy(() => import('../components/booking/CostCenterAllocation'));
 const BillingMethodSelector = React.lazy(() => import('../components/booking/BillingMethodSelector'));
-const PhoneInputWithCountry = React.lazy(() => import('@/components/ui/PhoneInputWithCountry'));
+const CorporateRequestSuccess = React.lazy(() => import('../components/corporate/CorporateRequestSuccess'));
 
 const ComponentLoader = () => (
   <div className="flex items-center justify-center p-4">
@@ -83,6 +84,7 @@ export default function SolicitarViagemCorporativa() {
   const [additionalPassengers, setAdditionalPassengers] = useState([]);
   const [step, setStep] = useState(1);
   const [serviceType, setServiceType] = useState('one_way');
+  const [multiTripLegs, setMultiTripLegs] = useState([]);
   const [requestSuccess, setRequestSuccess] = useState(false);
   const [requestNumber, setRequestNumber] = useState(null);
   const [returnRequestNumber, setReturnRequestNumber] = useState(null);
@@ -155,8 +157,8 @@ export default function SolicitarViagemCorporativa() {
   const { data: airportKeywordsConfig } = useQuery({
     queryKey: ['airportKeywordsCorporate'],
     queryFn: async () => {
-      const configs = await base44.entities.AppConfig.filter({ config_key: 'airport_keywords' });
-      return configs.length > 0 ? configs[0].config_value : null;
+      const response = await base44.functions.invoke('getPublicConfig');
+      return response.data?.airportKeywords || null;
     },
     staleTime: 300000, // 5 minutes
   });
@@ -258,16 +260,15 @@ export default function SolicitarViagemCorporativa() {
   const { data: clientUsersData, isLoading: isLoadingUsers } = useQuery({
     queryKey: ['clientUsers', client?.id],
     queryFn: async () => {
-      if (isMasterUser && client?.id) {
-        // Master buscando usuários de um cliente específico
-        const allUsers = await base44.entities.User.list();
-        const clientUsers = allUsers.filter(u => u.client_id === client.id && !u.is_driver);
-        return { success: true, users: clientUsers };
-      } else {
-        // Usuário normal usando a função existente
-        const response = await base44.functions.invoke('listClientUsers');
-        return response.data;
+      if (!client?.id) {
+        return { success: true, users: [] };
       }
+
+      const response = await base44.functions.invoke('listClientUsers', {
+        client_id: client.id
+      });
+
+      return response.data;
     },
     enabled: !!client?.id,
     initialData: { success: false, users: [] }
@@ -326,6 +327,13 @@ export default function SolicitarViagemCorporativa() {
   }, [clientUsersData, frequentRequesters]);
 
   useEffect(() => {
+    if (serviceType === 'multi_trip') {
+      setServiceType('one_way');
+      setMultiTripLegs([]);
+    }
+  }, [serviceType]);
+
+  useEffect(() => {
     const checkAuth = async () => {
       try {
         const currentUser = await base44.auth.me();
@@ -363,7 +371,7 @@ export default function SolicitarViagemCorporativa() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FSolicitarViagemCorporativa';
       }
     };
     checkAuth();
@@ -563,11 +571,24 @@ export default function SolicitarViagemCorporativa() {
 
   const validateStep1 = useCallback(() => {
     setError('');
-    // Master user must select a client before proceeding
     if (isMasterUser && !client) {
       setError('Por favor, selecione um cliente para continuar.');
       return false;
     }
+    
+    if (serviceType === 'multi_trip') {
+      if (multiTripLegs.length === 0) {
+        setError('Por favor, adicione pelo menos um trecho à sua viagem.');
+        return false;
+      }
+      const invalidLegs = multiTripLegs.filter(leg => !leg.origin || !leg.destination || !leg.date || !leg.time || !leg.selectedVehicleTypeId);
+      if (invalidLegs.length > 0) {
+        setError('Por favor, preencha todos os campos e selecione o tipo de veículo para cada trecho.');
+        return false;
+      }
+      return true;
+    }
+    
     if (serviceType !== 'hourly' && (!formData.origin || !formData.destination)) {
       setError('Por favor, preencha origem e destino.');
       return false;
@@ -627,10 +648,15 @@ export default function SolicitarViagemCorporativa() {
       return false;
     }
     return true;
-  }, [formData, serviceType, originIsAirport, destinationIsAirport, returnOriginIsAirport, returnDestinationIsAirport, isMasterUser, client]);
+  }, [formData, serviceType, originIsAirport, destinationIsAirport, returnOriginIsAirport, returnDestinationIsAirport, isMasterUser, client, multiTripLegs]);
 
   const handleCalculateAndContinue = async () => {
     if (!validateStep1()) return;
+    
+    if (serviceType === 'multi_trip') {
+      setStep(3);
+      return;
+    }
 
     // Lógica para clientes próprios (Módulo 3) - Calcular direto
     if (client?.client_type === 'own') {
@@ -789,8 +815,13 @@ export default function SolicitarViagemCorporativa() {
     setBillingData(newBillingData);
   }, []);
 
+  const clientHasCostCenters = client?.has_cost_centers !== false;
+
   const validateCostAllocation = useCallback(() => {
     setError('');
+    // Se o cliente não usa centros de custo, não validar
+    if (!clientHasCostCenters) return true;
+
     if (costAllocations.length === 0) {
       setError('Por favor, adicione pelo menos um centro de custo para esta viagem.');
       return false;
@@ -857,13 +888,13 @@ export default function SolicitarViagemCorporativa() {
       }
     }
 
-    if (billingData.billing_method === 'purchase_order' && !billingData.purchase_order_number) {
+    if (billingData.billing_method === 'purchase_order' && client?.requires_purchase_order_number === true && !billingData.purchase_order_number) {
       setError('Por favor, informe o número da ordem de compra.');
       return false;
     }
 
     return true;
-  }, [billingData]);
+  }, [billingData, client]);
 
   const validateStep3 = useCallback(() => {
     setError('');
@@ -935,9 +966,64 @@ export default function SolicitarViagemCorporativa() {
     setIsSubmitting(true);
     setError('');
     try {
-      // Determine the main passenger data based on user type and selection
       const passengerData = isMasterUser ? selectedPassenger : (isForMyself ? user : selectedPassenger);
       if (!passengerData) throw new Error('Informações do passageiro não disponíveis.');
+      
+      if (serviceType === 'multi_trip') {
+        const finalCostAllocations = costAllocations;
+        let finalPassengersDetails = [];
+        if (shouldUseDetailedList) {
+          if (passengersList.length > 0) finalPassengersDetails = passengersList;
+        } else {
+          finalPassengersDetails = [{
+            name: passengerData.full_name,
+            document_type: 'CPF',
+            document_number: passengerData.document_number || '',
+            phone_number: passengerData.phone_number || '',
+            is_lead_passenger: true
+          }, ...additionalPassengers.map(p => ({
+            name: p.full_name || p.name,
+            document_type: 'CPF',
+            document_number: p.document_number || '',
+            phone_number: p.phone_number || '',
+            is_lead_passenger: false
+          }))];
+        }
+        
+        const response = await base44.functions.invoke('submitMultiTripServiceRequest', {
+          client_id: client.id,
+          legs: multiTripLegs,
+          passengers: numberOfPassengers,
+          passenger_user_id: passengerData.id,
+          passenger_name: passengerData.full_name,
+          passenger_email: passengerData.email,
+          passenger_phone: passengerData.phone_number || '',
+          passengers_details: finalPassengersDetails.length > 0 ? finalPassengersDetails : null,
+          notes: formData.notes,
+          cost_allocation: finalCostAllocations,
+          billing_method: billingData.billing_method,
+          billing_responsible_user_id: billingData.billing_responsible_user_id || null,
+          billing_responsible_email: billingData.billing_responsible_email || null,
+          billing_responsible_name: billingData.billing_responsible_name || null,
+          credit_card_payment_link_recipient: billingData.credit_card_payment_link_recipient || null,
+          purchase_order_number: billingData.purchase_order_number || null,
+          requester_user_id: isMasterUser && selectedRequester?.type === 'system_user' ? selectedRequester.id : null,
+          requester_full_name: isMasterUser ? (selectedRequester?.full_name || selectedRequester?.display_name) : null,
+          requester_email: isMasterUser ? (selectedRequester?.email || selectedRequester?.display_email) : null,
+          requester_phone: isMasterUser ? selectedRequester?.phone_number : null,
+          frequent_requester_id: isMasterUser && selectedRequester?.type === 'frequent_requester' ? selectedRequester.id : null,
+          notification_phones: wantNotifications ? notificationPhones.filter(p => p && p.trim().length > 5) : []
+        });
+        
+        if (response.data.success) {
+          setRequestSuccess(true);
+          setTimeout(() => { navigate('/MinhasSolicitacoes'); }, 4000);
+        } else {
+          throw new Error(response.data.error || 'Erro ao criar viagens');
+        }
+        setIsSubmitting(false);
+        return;
+      }
 
       // Handle Own Client Booking (Módulo 3)
       if (client?.client_type === 'own') {
@@ -1150,49 +1236,14 @@ export default function SolicitarViagemCorporativa() {
 
   if (requestSuccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-green-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <CheckCircle className="w-10 h-10 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">
-            {isRoundTrip ? 'Solicitações Enviadas!' : 'Solicitação Enviada!'}
-          </h2>
-          <p className="text-gray-600 text-base mb-2">
-            {isRoundTrip
-              ? 'Suas solicitações de ida e volta foram enviadas com sucesso ao fornecedor.'
-              : 'Sua solicitação foi enviada com sucesso ao fornecedor.'}
-          </p>
-
-          {requestNumber && (
-            <div className="space-y-3 mb-6">
-              <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                <p className="text-sm text-green-700 mb-1 font-semibold">
-                  {isRoundTrip ? '✈️ Viagem de IDA:' : 'Número da Solicitação:'}
-                </p>
-                <p className="text-2xl font-bold text-green-600">{requestNumber}</p>
-              </div>
-
-              {isRoundTrip && returnRequestNumber && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-                  <p className="text-sm text-blue-700 mb-1 font-semibold">🔄 Viagem de VOLTA:</p>
-                  <p className="text-2xl font-bold text-blue-600">{returnRequestNumber}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left">
-            <p className="text-sm text-blue-900"><strong>📧 Próximos Passos:</strong></p>
-            <ul className="text-sm text-blue-800 mt-2 space-y-1 list-disc list-inside">
-              <li>O fornecedor receberá {isRoundTrip ? 'ambas as solicitações' : 'sua solicitação'}</li>
-              <li>Você receberá notificações sobre o status</li>
-              <li>Acompanhe em "Minhas Solicitações"</li>
-            </ul>
-          </div>
-          <p className="text-sm text-gray-600">Redirecionando para suas solicitações...</p>
-        </div>
-      </div>
+      <Suspense fallback={<ComponentLoader />}>
+        <CorporateRequestSuccess
+          serviceType={serviceType}
+          isRoundTrip={isRoundTrip}
+          requestNumber={requestNumber}
+          returnRequestNumber={returnRequestNumber}
+        />
+      </Suspense>
     );
   }
 
@@ -1334,752 +1385,96 @@ export default function SolicitarViagemCorporativa() {
             {step === 1 && (
               <Card>
                 <CardContent className="p-6">
-                  <Tabs value={serviceType} onValueChange={setServiceType} className="w-full">
-                    <TabsList className="grid w-full grid-cols-3 mb-6">
-                      <TabsTrigger value="one_way">Só Ida</TabsTrigger>
-                      <TabsTrigger value="round_trip">Ida e Volta</TabsTrigger>
-                      <TabsTrigger value="hourly">Por Hora</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="one_way" className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="origin">Origem *</Label>
-                          {formData.origin && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.origin)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="origin" 
-                            value={formData.origin} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, origin: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setOriginLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço de origem" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {originIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="origin_flight_number" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Origem) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.origin_flight_number} 
-                              date={formData.date}
-                              expectedOrigin={formData.origin}
-                              checkType="arrival"
-                            />
-                          </div>
-                          <Input
-                            id="origin_flight_number"
-                            value={formData.origin_flight_number}
-                            onChange={(e) => setFormData({...formData, origin_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                          <p className="text-xs text-blue-700">
-                            ℹ️ Para rastreamento de chegada do passageiro
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="destination">Destino *</Label>
-                          {formData.destination && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.destination)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="destination" 
-                            value={formData.destination} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, destination: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setDestinationLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço de destino" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {destinationIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="destination_flight_number" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Destino) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.destination_flight_number} 
-                              date={formData.date}
-                              expectedDestination={formData.destination}
-                              checkType="departure"
-                            />
-                          </div>
-                          <Input
-                            id="destination_flight_number"
-                            value={formData.destination_flight_number}
-                            onChange={(e) => setFormData({...formData, destination_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                          <p className="text-xs text-blue-700">
-                            ℹ️ Para rastreamento de partida do passageiro
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="date">Data *</Label>
-                          <Input id="date" type="date" min={minDate} value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="time">Horário *</Label>
-                          <Input id="time" type="time" value={formData.time} onChange={(e) => setFormData({...formData, time: e.target.value})} />
-                        </div>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="round_trip" className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="origin-rt">Origem *</Label>
-                          {formData.origin && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.origin)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="origin-rt" 
-                            value={formData.origin} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, origin: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setOriginLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço de origem" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {originIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="origin_flight_number_rt" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Ida - Origem) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.origin_flight_number} 
-                              date={formData.date}
-                              expectedOrigin={formData.origin}
-                              checkType="arrival"
-                            />
-                          </div>
-                          <Input
-                            id="origin_flight_number_rt"
-                            value={formData.origin_flight_number}
-                            onChange={(e) => setFormData({...formData, origin_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="destination-rt">Destino *</Label>
-                          {formData.destination && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.destination)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="destination-rt" 
-                            value={formData.destination} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, destination: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setDestinationLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço de destino" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {destinationIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="destination_flight_number_rt" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Ida - Destino) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.destination_flight_number} 
-                              date={formData.date}
-                              expectedDestination={formData.destination}
-                              checkType="departure"
-                            />
-                          </div>
-                          <Input
-                            id="destination_flight_number_rt"
-                            value={formData.destination_flight_number}
-                            onChange={(e) => setFormData({...formData, destination_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                        </div>
-                      )}
-
-                      <div className="bg-blue-50 p-4 rounded-lg space-y-4">
-                        <h3 className="font-semibold text-blue-900">Ida</h3>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="date-rt">Data *</Label>
-                            <Input id="date-rt" type="date" min={minDate} value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="time-rt">Horário *</Label>
-                            <Input id="time-rt" type="time" value={formData.time} onChange={(e) => setFormData({...formData, time: e.target.value})} />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="bg-green-50 p-4 rounded-lg space-y-4">
-                        <h3 className="font-semibold text-green-900">Volta</h3>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="return-date">Data *</Label>
-                            <Input id="return-date" type="date" min={formData.date || minDate} value={formData.return_date} onChange={(e) => setFormData({...formData, return_date: e.target.value})} />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="return-time">Horário *</Label>
-                            <Input id="return-time" type="time" value={formData.return_time} onChange={(e) => setFormData({...formData, return_time: e.target.value})} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {returnOriginIsAirport && (
-                        <div className="space-y-2 bg-green-50 border border-green-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="return_origin_flight_number" className="flex items-center gap-2 text-sm font-bold text-green-900">
-                              <PlaneIcon className="w-4 h-4 text-green-600" />
-                              Número do Voo / Companhia (Volta - Origem) *
-                            </Label>
-                            <Suspense fallback={<ComponentLoader />}>
-                              <FlightStatusChecker 
-                                flightNumber={formData.return_origin_flight_number} 
-                                date={formData.return_date}
-                                expectedOrigin={formData.destination} // Retorno origem = destino da ida
-                                checkType="arrival"
-                              />
-                            </Suspense>
-                          </div>
-                          <Input
-                            id="return_origin_flight_number"
-                            value={formData.return_origin_flight_number}
-                            onChange={(e) => setFormData({...formData, return_origin_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3001, GOL 1235"
-                            className="bg-white"
-                          />
-                        </div>
-                      )}
-
-                      {returnDestinationIsAirport && (
-                        <div className="space-y-2 bg-green-50 border border-green-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="return_destination_flight_number" className="flex items-center gap-2 text-sm font-bold text-green-900">
-                              <PlaneIcon className="w-4 h-4 text-green-600" />
-                              Número do Voo / Companhia (Volta - Destino) *
-                            </Label>
-                            <Suspense fallback={<ComponentLoader />}>
-                              <FlightStatusChecker 
-                                flightNumber={formData.return_destination_flight_number} 
-                                date={formData.return_date}
-                                expectedDestination={formData.origin} // Retorno destino = origem da ida
-                                checkType="departure"
-                              />
-                            </Suspense>
-                          </div>
-                          <Input
-                            id="return_destination_flight_number"
-                            value={formData.return_destination_flight_number}
-                            onChange={(e) => setFormData({...formData, return_destination_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3001, GOL 1235"
-                            className="bg-white"
-                          />
-                        </div>
-                      )}
-                    </TabsContent>
-
-                    <TabsContent value="hourly" className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="hours">Quantidade de Horas *</Label>
-                        <Select value={String(formData.hours)} onValueChange={(value) => setFormData({...formData, hours: parseInt(value)})}>
-                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="5">5 Horas</SelectItem>
-                            <SelectItem value="10">10 Horas</SelectItem>
-                            <SelectItem value="12">12 Horas</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="origin-hourly">Ponto de Partida *</Label>
-                          {formData.origin && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.origin)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="origin-hourly" 
-                            value={formData.origin} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, origin: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setOriginLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço inicial" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {originIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="origin_flight_number_hourly" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Origem) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.origin_flight_number} 
-                              date={formData.date}
-                              expectedOrigin={formData.origin}
-                              checkType="arrival"
-                            />
-                          </div>
-                          <Input
-                            id="origin_flight_number_hourly"
-                            value={formData.origin_flight_number}
-                            onChange={(e) => setFormData({...formData, origin_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                          <p className="text-xs text-blue-700">
-                            ℹ️ Para rastreamento de chegada do passageiro
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Paradas Adicionais (Obrigatório pelo menos 1) */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-base font-semibold">Paradas Adicionais (Obrigatório pelo menos 1) *</Label>
-                          <Button
-                            type="button"
-                            onClick={handleAddStop}
-                            variant="outline"
-                            size="sm"
-                            className="text-blue-600 border-blue-300 hover:bg-blue-50"
-                          >
-                            <Plus className="w-4 h-4 mr-2" />
-                            Adicionar Parada
-                          </Button>
-                        </div>
-
-                        {formData.additional_stops.length > 0 && (
-                          <div className="space-y-3">
-                            {formData.additional_stops.map((stop, index) => (
-                              <div key={index} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                <div className="flex items-start gap-2">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <MapPin className="w-4 h-4 text-blue-600" />
-                                      <Label className="text-sm font-medium text-blue-900">Parada {index + 1}</Label>
-                                    </div>
-                                    <Suspense fallback={<ComponentLoader />}>
-                                      <LocationAutocomplete
-                                        id={`stop-${index}`}
-                                        value={stop}
-                                        onChange={(value) => handleStopChange(index, value)}
-                                        placeholder="Digite o endereço da parada"
-                                      />
-                                    </Suspense>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    onClick={() => handleRemoveStop(index)}
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 mt-6"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {formData.additional_stops.length === 0 && (
-                          <Alert className="bg-orange-50 border-orange-300">
-                            <AlertCircle className="h-4 w-4 text-orange-600" />
-                            <AlertDescription className="text-orange-800 text-sm font-medium">
-                              ⚠️ Para viagens por hora, adicione pelo menos uma parada entre origem e destino final.
-                            </AlertDescription>
-                          </Alert>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <Label htmlFor="destination-hourly">Destino Final *</Label>
-                          {formData.destination && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
-                              onClick={() => handleCopyToClipboard(formData.destination)}
-                              title="Copiar endereço"
-                            >
-                              <Copy className="w-3 h-3 mr-1" /> Copiar
-                            </Button>
-                          )}
-                        </div>
-                        <Suspense fallback={<ComponentLoader />}>
-                          <LocationAutocomplete 
-                            id="destination-hourly" 
-                            value={formData.destination} 
-                            onChange={(value) => startTransition(() => setFormData({...formData, destination: value}))} 
-                            onLocationSelect={(loc) => startTransition(() => setDestinationLocationType(loc?.type || null))}
-                            placeholder="Digite o endereço de destino final" 
-                          />
-                        </Suspense>
-                      </div>
-
-                      {destinationIsAirport && (
-                        <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                          <div className="flex justify-between items-start mb-1">
-                            <Label htmlFor="destination_flight_number_hourly" className="flex items-center gap-2 text-sm font-bold text-blue-900">
-                              <PlaneIcon className="w-4 h-4 text-blue-600" />
-                              Número do Voo / Companhia (Destino Final) *
-                            </Label>
-                            <FlightStatusChecker 
-                              flightNumber={formData.destination_flight_number} 
-                              date={formData.date}
-                              expectedDestination={formData.destination}
-                              checkType="departure"
-                            />
-                          </div>
-                          <Input
-                            id="destination_flight_number_hourly"
-                            value={formData.destination_flight_number}
-                            onChange={(e) => setFormData({...formData, destination_flight_number: e.target.value})}
-                            placeholder="Ex: LA 3000, GOL 1234"
-                            className="bg-white"
-                          />
-                          <p className="text-xs text-blue-700">
-                            ℹ️ Para rastreamento de partida do passageiro
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="date-hourly">Data *</Label>
-                          <Input id="date-hourly" type="date" min={minDate} value={formData.date} onChange={(e) => setFormData({...formData, date: e.target.value})} />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="time-hourly">Horário *</Label>
-                          <Input id="time-hourly" type="time" value={formData.time} onChange={(e) => setFormData({...formData, time: e.target.value})} />
-                        </div>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-
-                  <div className="mt-6 space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="driver_language">Idioma do Motorista</Label>
-                      <Select value={driverLanguage} onValueChange={setDriverLanguage}>
-                        <SelectTrigger id="driver_language"><SelectValue placeholder="Selecione" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pt">🇧🇷 Português</SelectItem>
-                          <SelectItem value="en">🇺🇸 English</SelectItem>
-                          <SelectItem value="es">🇪🇸 Español</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button onClick={handleCalculateAndContinue} disabled={isCalculatingPrices || (client && client.client_type !== 'own' && (!client.associated_supplier_ids || client.associated_supplier_ids.length === 0))} className="w-full bg-blue-600 hover:bg-blue-700">
-                      {isCalculatingPrices ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Consultando Fornecedores...
-                        </>
-                      ) : (
-                        <>
-                          Ver Opções de Fornecedores
-                          <ArrowRight className="w-4 h-4 ml-2" />
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  <Suspense fallback={<ComponentLoader />}>
+                    <CorporateStep1Tabs
+                      serviceType={serviceType}
+                      onServiceTypeChange={setServiceType}
+                      formData={formData}
+                      onFormDataChange={setFormData}
+                      driverLanguage={driverLanguage}
+                      onDriverLanguageChange={setDriverLanguage}
+                      multiTripLegs={multiTripLegs}
+                      onMultiTripLegsChange={setMultiTripLegs}
+                      clientId={client?.id}
+                      originIsAirport={originIsAirport}
+                      destinationIsAirport={destinationIsAirport}
+                      returnOriginIsAirport={returnOriginIsAirport}
+                      returnDestinationIsAirport={returnDestinationIsAirport}
+                      onOriginLocationTypeChange={setOriginLocationType}
+                      onDestinationLocationTypeChange={setDestinationLocationType}
+                      onCopyToClipboard={handleCopyToClipboard}
+                      minDate={minDate}
+                      isCalculatingPrices={isCalculatingPrices}
+                      onCalculateAndContinue={handleCalculateAndContinue}
+                      client={client}
+                    />
+                  </Suspense>
                 </CardContent>
               </Card>
             )}
 
             {step === 2 && (
-              <div className="space-y-6">
-                <Button variant="ghost" onClick={() => startTransition(() => { setStep(1); setSelectedSupplier(null); setNumberOfPassengers(1); setPassengersList([]); setAdditionalPassengers([]); setError(''); })} className="mb-4">
-                  ← Voltar
-                </Button>
-
-                <div>
-                  <h2 className="text-2xl font-bold mb-2">Escolha a Melhor Opção</h2>
-                  <p className="text-gray-600 mb-6">Comparamos todos os fornecedores disponíveis. Ofertas organizadas por categoria de veículo.</p>
-
-                  {serviceType === 'round_trip' && (
-                    <Alert className="mb-6 bg-blue-50 border-blue-300">
-                      <AlertCircle className="h-4 w-4 text-blue-600" />
-                      <AlertDescription className="text-blue-900 text-sm">
-                        <strong>ℹ️ Ida e Volta:</strong> Os preços exibidos são <strong>por viagem</strong> (ida ou volta). O valor total será a soma das duas viagens.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {(() => {
-                    const groupedQuotes = {};
-                    supplierQuotes.forEach(quote => {
-                      if (!groupedQuotes[quote.vehicle_name]) {
-                        groupedQuotes[quote.vehicle_name] = [];
-                      }
-                      groupedQuotes[quote.vehicle_name].push(quote);
-                    });
-
-                    Object.keys(groupedQuotes).forEach(vehicleType => {
-                      groupedQuotes[vehicleType].sort((a, b) => a.client_price - b.client_price);
-                    });
-
-                    const absoluteBestPrice = supplierQuotes.length > 0 ? Math.min(...supplierQuotes.map(q => q.client_price)) : 0;
-
-                    const sortedVehicleTypes = Object.keys(groupedQuotes).sort((a, b) => {
-                      const minPriceA = groupedQuotes[a][0].client_price;
-                      const minPriceB = groupedQuotes[b][0].client_price;
-                      return minPriceA - minPriceB;
-                    });
-
-                    return (
-                      <Accordion type="single" collapsible className="space-y-3">
-                        {sortedVehicleTypes.map((vehicleType, categoryIndex) => {
-                          const quotes = groupedQuotes[vehicleType];
-                          const categoryBestPrice = quotes[0].client_price;
-                          const isCheapestCategory = categoryIndex === 0;
-
-                          return (
-                            <AccordionItem
-                              key={vehicleType}
-                              value={vehicleType}
-                              className={`border-2 rounded-xl overflow-hidden ${
-                                isCheapestCategory && quotes.some(q => q.client_price === absoluteBestPrice) ? 'border-green-400 bg-gradient-to-r from-green-50 to-emerald-50' : 'border-gray-200 bg-white'
-                              }`}
-                            >
-                              <AccordionTrigger className="px-4 md:px-6 py-3 md:py-4 hover:bg-opacity-50 hover:no-underline">
-                                <div className="flex items-center justify-between w-full pr-2 md:pr-4">
-                                  <div className="flex items-center gap-2 md:gap-3">
-                                    <h3 className="text-lg md:text-xl font-bold text-gray-900">{vehicleType}</h3>
-                                    <Badge variant="outline" className="text-xs">
-                                      {quotes.length} {quotes.length === 1 ? 'opção' : 'opções'}
-                                    </Badge>
-                                  </div>
-                                  <div className="flex items-center gap-2 md:gap-4">
-                                    <div className="text-right">
-                                      <p className="text-xs text-gray-500">A partir de</p>
-                                      <p className={`text-xl md:text-2xl font-bold ${isCheapestCategory && quotes.some(q => q.client_price === absoluteBestPrice) ? 'text-green-700' : 'text-blue-600'}`}>
-                                        {formatPrice(categoryBestPrice)}{serviceType === 'round_trip' && <span className="text-sm font-normal text-gray-500"> /viagem</span>}
-                                      </p>
-                                    </div>
-                                    <ChevronDown className="w-4 h-4 md:w-5 md:h-5 text-gray-400 transition-transform" />
-                                  </div>
-                                </div>
-                              </AccordionTrigger>
-
-                              <AccordionContent className="px-4 md:px-6 pb-4 md:pb-6 pt-2">
-                                <div className="space-y-3">
-                                  {quotes.map((quote, quoteIndex) => {
-                                    const isSelected = selectedSupplier?.supplier_id === quote.supplier_id && selectedSupplier?.vehicle_type_id === quote.vehicle_type_id;
-                                    const isCategoryBest = quoteIndex === 0;
-
-                                    return (
-                                      <Card
-                                        key={`${quote.supplier_id}-${quote.vehicle_type_id}`}
-                                        className={`cursor-pointer transition-all hover:shadow-lg ${
-                                          isSelected ? 'ring-2 ring-blue-500 shadow-xl bg-blue-50' : 'hover:bg-gray-50'
-                                        }`}
-                                        onClick={() => handleSupplierSelect(quote)}
-                                      >
-                                        <CardContent className="p-3 md:p-4">
-                                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4">
-                                            <div className="flex-1">
-                                              <div className="flex flex-wrap items-center gap-2 mb-2 md:mb-3">
-                                                {isCategoryBest && (
-                                                  <Badge className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-0 text-xs">
-                                                    <Star className="w-3 h-3 mr-1" />
-                                                    Melhor desta Categoria
-                                                  </Badge>
-                                                )}
-                                                <h4 className="text-base md:text-lg font-bold text-gray-900">{quote.supplier_name}</h4>
-                                              </div>
-
-                                              <div className="grid grid-cols-2 gap-2 md:gap-3 text-xs md:text-sm text-gray-600">
-                                                <div className="flex items-center gap-2">
-                                                  <UsersIcon className="w-4 h-4 text-blue-500" />
-                                                  <span>Até <strong>{quote.max_passengers}</strong> passageiros</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                  <Package className="w-4 h-4 text-purple-500" />
-                                                  <span><strong>{quote.max_luggage}</strong> malas</span>
-                                                </div>
-                                              </div>
-
-                                               {quote.calculation_details && (
-                                                 <div className="mt-3 pt-3 border-t border-gray-200">
-                                                   <div className="flex flex-wrap gap-3 text-xs">
-                                                     {quote.calculation_details.tolls_included ? (
-                                                       <div className="flex items-center gap-1 text-green-700 bg-green-50 px-2 py-1 rounded border border-green-100">
-                                                         <CheckCircle className="w-3 h-3" />
-                                                         <span>Pedágios: <strong>{formatPrice(quote.calculation_details.tolls_cost || 0)}</strong></span>
-                                                       </div>
-                                                     ) : quote.calculation_details.tolls_error ? (
-                                                       <div className="flex items-center gap-1 text-orange-700 bg-orange-50 px-2 py-1 rounded border border-orange-100">
-                                                         <AlertCircle className="w-3 h-3" />
-                                                         <span>Pedágios não inclusos</span>
-                                                       </div>
-                                                     ) : null}
-                                                     
-                                                     {quote.calculation_details.supplier_total_duration_minutes > 0 && (
-                                                       <div className="flex items-center gap-1 text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-100">
-                                                         <Clock className="w-3 h-3" />
-                                                         <span>Duração: <strong>{(quote.calculation_details.supplier_total_duration_minutes / 60).toFixed(0)}h {quote.calculation_details.supplier_total_duration_minutes % 60}min</strong></span>
-                                                       </div>
-                                                     )}
-                                                   </div>
-                                                 </div>
-                                               )}
-
-                                            </div>
-
-                                            <div className="flex md:flex-col items-center md:items-end gap-3 justify-between md:justify-start">
-                                              <div className="text-right">
-                                                {quoteIndex > 0 && categoryBestPrice > 0 && (
-                                                  <p className="text-xs text-gray-500 mb-1">
-                                                    +{formatPrice(quote.client_price - categoryBestPrice)} que a melhor
-                                                  </p>
-                                                )}
-                                                <div className="text-2xl md:text-3xl font-bold text-blue-600">
-                                                  {formatPrice(quote.client_price)}
-                                                  {serviceType === 'round_trip' && (
-                                                    <span className="block text-xs font-normal text-gray-500 mt-1">/viagem</span>
-                                                  )}
-                                                </div>
-                                              </div>
-
-                                              {isSelected ? (
-                                                <div className="flex items-center gap-2 text-blue-600 bg-blue-100 px-3 md:px-4 py-1.5 md:py-2 rounded-full shadow-md">
-                                                  <CheckCircle className="w-4 h-4 md:w-5 h-5" />
-                                                  <span className="font-semibold text-xs md:text-sm">Selecionado</span>
-                                                </div>
-                                              ) : (
-                                                <Button
-                                                  variant="outline"
-                                                  size="sm"
-                                                  className="border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white font-semibold text-xs md:text-sm"
-                                                >
-                                                  Selecionar
-                                                </Button>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </CardContent>
-                                      </Card>
-                                    );
-                                  })}
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          );
-                        })}
-                      </Accordion>
-                    );
-                  })()}
-
-                  <Alert className="mt-6 bg-blue-50 border-blue-300">
-                    <AlertCircle className="h-4 w-4 text-blue-600" />
-                    <AlertDescription className="text-blue-900 text-sm">
-                      <strong>💡 Dica:</strong> As opções estão ordenadas do menor para o maior preço dentro de cada categoria de veículo.
-                    </AlertDescription>
-                  </Alert>
-                </div>
-
-                {selectedSupplier && (
-                  <div className="sticky bottom-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-4 border-t-2 border-gray-200">
-                    <Button onClick={() => startTransition(() => setStep(3))} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-base md:text-lg py-5 md:py-6 shadow-lg">
-                      Continuar com {selectedSupplier.vehicle_name} - {selectedSupplier.supplier_name}
-                      <ArrowRight className="w-4 h-4 md:w-5 md:h-5 ml-2" />
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <Suspense fallback={<ComponentLoader />}>
+                <CorporateStep2SupplierSelection
+                  supplierQuotes={supplierQuotes}
+                  selectedSupplier={selectedSupplier}
+                  onSupplierSelect={handleSupplierSelect}
+                  serviceType={serviceType}
+                  onContinue={() => startTransition(() => setStep(3))}
+                  onBack={() => startTransition(() => { setStep(1); setSelectedSupplier(null); setNumberOfPassengers(1); setPassengersList([]); setAdditionalPassengers([]); setError(''); })}
+                  formatPrice={formatPrice}
+                />
+              </Suspense>
             )}
 
-            {step === 3 && selectedSupplier && (
+            {step === 3 && (selectedSupplier || serviceType === 'multi_trip') && (
               <div className="space-y-6">
-                <Button variant="ghost" onClick={() => startTransition(() => { setStep(2); setError(''); })} className="mb-4">
+                <Button variant="ghost" onClick={() => startTransition(() => { setStep(serviceType === 'multi_trip' ? 1 : 2); setError(''); })} className="mb-4">
                   ← Voltar
                 </Button>
 
-                <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
+                {serviceType === 'multi_trip' && (
+                  <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300">
+                    <CardContent className="p-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <MapPin className="w-5 h-5 text-purple-600" />
+                          <h3 className="text-xl font-bold text-gray-900">Itinerário: {multiTripLegs.length} {multiTripLegs.length === 1 ? 'trecho' : 'trechos'}</h3>
+                        </div>
+                        {multiTripLegs.map((leg, index) => (
+                          <div key={index} className="bg-white rounded-lg border border-purple-200 p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Badge className="bg-purple-600 text-white">#{index + 1}</Badge>
+                                <span className="text-sm text-gray-600">{format(new Date(leg.date + 'T' + leg.time), "dd/MM/yy HH:mm")}</span>
+                              </div>
+                              <Badge variant="outline" className="text-xs">{leg.vehicleTypeName}</Badge>
+                            </div>
+                            <div className="space-y-1 text-sm">
+                              <p className="text-gray-700 truncate"><strong>De:</strong> {leg.origin}</p>
+                              <p className="text-gray-700 truncate"><strong>Para:</strong> {leg.destination}</p>
+                              <div className="flex justify-between pt-2 border-t mt-2">
+                                <span className="text-gray-600">Valor:</span>
+                                <span className="text-lg font-bold text-purple-600">{formatPrice(leg.calculatedPrice)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg p-4">
+                          <div className="flex justify-between items-center">
+                            <span className="text-lg font-semibold">Total do Itinerário:</span>
+                            <span className="text-3xl font-bold">{formatPrice(multiTripLegs.reduce((sum, leg) => sum + leg.calculatedPrice, 0))}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {selectedSupplier && serviceType !== 'multi_trip' && (
+                  <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-blue-700 font-semibold mb-1">Veículo Selecionado:</p>
                         <h3 className="text-xl font-bold text-gray-900">{selectedSupplier.vehicle_name}</h3>
@@ -2116,83 +1511,18 @@ export default function SolicitarViagemCorporativa() {
                     )}
                   </CardContent>
                 </Card>
+                )}
 
                 <Card>
                   <CardContent className="p-6">
-                    {/* Seção de Notificações em Tempo Real */}
-                    <div className="mb-8 pb-6 border-b border-gray-200">
-                      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                        <BellRing className="w-6 h-6 text-blue-600" />
-                        Notificações da Viagem
-                      </h2>
-
-                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                        <div className="flex items-start space-x-3 mb-4">
-                          <Checkbox 
-                            id="want_notifications" 
-                            checked={wantNotifications} 
-                            onCheckedChange={setWantNotifications}
-                            className="mt-1"
-                          />
-                          <div>
-                            <Label 
-                              htmlFor="want_notifications" 
-                              className="text-base font-semibold text-blue-900 cursor-pointer"
-                            >
-                              Deseja receber notificações sobre esta viagem?
-                            </Label>
-                            <p className="text-sm text-blue-700 mt-1">
-                              Ao marcar esta opção, os números informados receberão o link da timeline em tempo real assim que o motorista iniciar a viagem.
-                            </p>
-                          </div>
-                        </div>
-
-                        {wantNotifications && (
-                          <div className="pl-7 space-y-3 animate-in fade-in slide-in-from-top-2">
-                            <Label className="text-sm font-semibold text-blue-900">
-                              Telefones para notificação (WhatsApp)
-                            </Label>
-
-                            {notificationPhones.map((phone, index) => (
-                              <div key={index} className="flex gap-2">
-                                <div className="flex-1">
-                                  <Suspense fallback={<ComponentLoader />}>
-                                    <PhoneInputWithCountry
-                                      value={phone}
-                                      onChange={(value) => handleNotificationPhoneChange(index, value)}
-                                      placeholder="(00) 00000-0000"
-                                      className="bg-white"
-                                    />
-                                  </Suspense>
-                                </div>
-                                {notificationPhones.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleRemoveNotificationPhone(index)}
-                                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={handleAddNotificationPhone}
-                              className="text-blue-600 border-blue-300 hover:bg-blue-50"
-                            >
-                              <Plus className="w-3 h-3 mr-1" />
-                              Adicionar outro telefone
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <Suspense fallback={<ComponentLoader />}>
+                      <CorporateNotificationsSection
+                        wantNotifications={wantNotifications}
+                        onWantNotificationsChange={setWantNotifications}
+                        notificationPhones={notificationPhones}
+                        onPhonesChange={setNotificationPhones}
+                      />
+                    </Suspense>
 
                     {/* Seção do Solicitante (Apenas Master) */}
                     {isMasterUser && (
@@ -2253,16 +1583,18 @@ export default function SolicitarViagemCorporativa() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: maxPassengersAllowed }, (_, i) => i + 1).map((num) => (
+                          {Array.from({ length: serviceType === 'multi_trip' ? 10 : maxPassengersAllowed }, (_, i) => i + 1).map((num) => (
                             <SelectItem key={num} value={String(num)}>
                               {num} {num === 1 ? 'passageiro' : 'passageiros'}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-green-600 mt-1 font-medium">
-                        ✅ Este veículo ({selectedSupplier.vehicle_name}) comporta até {maxPassengersAllowed} passageiros
-                      </p>
+                      {serviceType !== 'multi_trip' && (
+                        <p className="text-xs text-green-600 mt-1 font-medium">
+                          ✅ Este veículo ({selectedSupplier.vehicle_name}) comporta até {maxPassengersAllowed} passageiros
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-3 mb-6 pb-6 border-b">
@@ -2370,6 +1702,7 @@ export default function SolicitarViagemCorporativa() {
                   <CardContent className="p-6">
                     <h2 className="text-2xl font-bold mb-4">Informações Adicionais</h2>
                     <div className="space-y-6">
+                      {clientHasCostCenters && (
                       <div className="border-t pt-6">
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-2">
@@ -2399,7 +1732,7 @@ export default function SolicitarViagemCorporativa() {
                             <CostCenterAllocation
                               allocations={costAllocations}
                               onChange={handleCostAllocationsChange}
-                              totalPrice={selectedSupplier.client_price}
+                              totalPrice={serviceType === 'multi_trip' ? multiTripLegs.reduce((sum, leg) => sum + leg.calculatedPrice, 0) : selectedSupplier.client_price}
                             />
                           </Suspense>
                         )}
@@ -2599,6 +1932,7 @@ export default function SolicitarViagemCorporativa() {
 
                         {/* Removed redundant alert about mandatory cost center */}
                       </div>
+                      )}
 
                       <div className="border-t pt-6">
                         <Suspense fallback={<ComponentLoader />}>
@@ -2608,6 +1942,7 @@ export default function SolicitarViagemCorporativa() {
                             currentUser={user}
                             availableFinancialResponsibles={availableFinancialResponsibles}
                             isMasterUser={isMasterUser}
+                            clientRequiresPurchaseOrder={client?.requires_purchase_order_number === true}
                           />
                         </Suspense>
                       </div>
@@ -2619,7 +1954,7 @@ export default function SolicitarViagemCorporativa() {
 
                       <Button
                         onClick={handleSubmitRequest}
-                        disabled={isSubmitting || costAllocations.length === 0}
+                        disabled={isSubmitting || (clientHasCostCenters && costAllocations.length === 0)}
                         className="w-full bg-green-600 hover:bg-green-700 text-lg py-6"
                       >
                         {isSubmitting ? (
@@ -2635,7 +1970,7 @@ export default function SolicitarViagemCorporativa() {
                         )}
                       </Button>
 
-                      {costAllocations.length === 0 && (
+                      {clientHasCostCenters && costAllocations.length === 0 && (
                         <p className="text-xs text-center text-red-600 font-medium">
                           ⚠️ Adicione pelo menos um centro de custo para habilitar o envio
                         </p>

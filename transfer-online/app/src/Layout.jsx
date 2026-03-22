@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { 
         Home, Calendar, LayoutDashboard, MapPin, LogOut, Settings, Car, Lock, Package, 
         MessageSquare, Menu, User, Ticket, Users, DollarSign, Building2, CheckCircle, 
-        Receipt, BarChart3, Plane, FileText, Briefcase, Shield, HelpCircle, 
+        Receipt, BarChart3, Plane, FileText, Briefcase, Shield, HelpCircle, Wrench,
         ChevronLeft, ChevronRight, Plus, Activity, Link2, UserCheck, Search, ArrowDown
         } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 import { LanguageProvider, useLanguage } from './components/LanguageContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import LanguageSelector from './components/LanguageSelector';
@@ -156,8 +157,11 @@ function LayoutContent({ children, currentPageName }) {
       }
       // Tratamento global para erros 401 (Não autorizado)
       if (event?.reason?.response?.status === 401 || event?.reason?.message?.includes('401')) {
-          console.warn('[Layout] Sessão expirada detectada (401). Redirecionando para login...');
-          base44.auth.logout();
+          console.warn('[Layout] Sessão expirada detectada (401). Redirecionando para AccessPortal...');
+          localStorage.removeItem('base44_access_token');
+          localStorage.removeItem('token');
+          localStorage.removeItem('access_token');
+          window.location.href = '/AccessPortal';
       }
     };
 
@@ -268,6 +272,7 @@ function LayoutContent({ children, currentPageName }) {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { user: authUser, isAuthenticated: isAuthReady, isLoadingAuth } = useAuth();
   const [user, setUser] = React.useState(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
@@ -300,7 +305,7 @@ function LayoutContent({ children, currentPageName }) {
   });
 
   const isBookingPage = currentPageName === 'NovaReserva';
-  const isPublicQuoteView = currentPageName === 'PublicQuoteView' || currentPageName === 'PublicSharedTripListView' || currentPageName === 'Demonstracao' || currentPageName === 'SharedTripTimeline' || currentPageName === 'Inicio' || currentPageName === 'Index';
+  const isPublicQuoteView = currentPageName === 'PublicQuoteView' || currentPageName === 'PublicSharedTripListView' || currentPageName === 'Demonstracao' || currentPageName === 'SharedTripTimeline' || currentPageName === 'Inicio' || currentPageName === 'Index' || currentPageName === 'ClientAuditAccess';
   
   const rootPages = [
     'NovaReserva', 'Inicio', 'Index', 'AdminDashboard', 'DashboardMotoristaV2', 
@@ -319,14 +324,14 @@ function LayoutContent({ children, currentPageName }) {
   const isClientAdmin = isCorporateUser && (user?.client_role === 'admin' || user?.client_corporate_role === 'admin_client');
   
   const supplierPages = React.useMemo(() => {
-    const pages = ['MinhasSolicitacoesFornecedor', 'GerenciarFaturamento', 'GerenciarPagamentos', 'MeusVeiculosFornecedor', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'MeusDados', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'EnviarMensagemMotoristas', 'CriarCotacaoManual', 'GerenciarCotacoes', 'GerenciarEventos', 'EventDetails', 'GerenciarLinksCompartilhados', 'PortalCorporativo', 'SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'ClientAnalytics', 'GerenciarFuncionarios', 'RelatorioFinanceiroFornecedores', 'GerenciarCoordenadores'];
+    const pages = ['MinhasSolicitacoesFornecedor', 'GerenciarFaturamento', 'GerenciarPagamentos', 'MeusVeiculosFornecedor', 'GerenciarManutencaoFrota', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'MeusDados', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'EnviarMensagemMotoristas', 'CriarCotacaoManual', 'GerenciarCotacoes', 'GerenciarEventos', 'EventDetails', 'GerenciarLinksCompartilhados', 'PortalCorporativo', 'SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'ClientAnalytics', 'GerenciarFuncionarios', 'RelatorioFinanceiroFornecedores', 'GerenciarCoordenadores', 'ManualArquitetonico'];
     if (supplierData?.features?.event_dashboard_access) pages.push('EventDashboard');
     if (supplierData?.features?.driver_tracking_access) pages.push('LocalizacaoMotoristas');
     if (supplierData?.features?.can_subcontract) pages.push('GerenciarParceiros');
     return pages;
     }, [supplierData]);
-  const corporatePages = ['SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'GerenciarFuncionarios', 'MeusDados', 'ClientAnalytics'];
-  const driverPages = ['DashboardMotoristaV2', 'DetalhesViagemMotorista', 'DetalhesViagemMotoristaV2', 'MeusPagamentosMotorista', 'MeusDocumentosMotorista', 'MeusDados'];
+  const corporatePages = ['SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'GerenciarFuncionarios', 'MeusDados', 'ClientAnalytics', 'ManualArquitetonico'];
+  const driverPages = ['DashboardMotoristaV2', 'DetalhesViagemMotorista', 'DetalhesViagemMotoristaV2', 'MeusPagamentosMotorista', 'MeusDocumentosMotorista', 'MeusDados', 'ManualArquitetonico'];
   const eventManagerPages = ['GerenciarEventos', 'EventDetails', 'EventDashboard', 'MeusDados'];
 
   React.useEffect(() => {
@@ -363,23 +368,35 @@ function LayoutContent({ children, currentPageName }) {
   }, []);
 
   React.useEffect(() => {
+    // Aguardar o AuthContext terminar de carregar
+    if (isLoadingAuth) return;
+
     const initializeApp = async () => {
       try {
-        try {
-          const currentUser = await base44.auth.me();
-          setUser(currentUser);
-          
-          if (currentUser?.supplier_id) {
-            try {
-              const supplier = await base44.entities.Supplier.get(currentUser.supplier_id);
-              setSupplierData(supplier);
-            } catch (e) {
-              console.warn('[Layout] Aviso ao buscar fornecedor:', e.message || e);
-            }
+        // Usar user do AuthContext se disponível (evita request duplicado)
+        let currentUser = null;
+        if (isAuthReady && authUser) {
+          currentUser = authUser;
+        } else {
+          try {
+            currentUser = await base44.auth.me();
+          } catch (e) {
+            // não autenticado
           }
+        }
+        setUser(currentUser);
+          
+        if (currentUser?.supplier_id) {
+          try {
+            const supplier = await base44.entities.Supplier.get(currentUser.supplier_id);
+            setSupplierData(supplier);
+          } catch (e) {
+            console.warn('[Layout] Aviso ao buscar fornecedor:', e.message || e);
+          }
+        }
 
-          // Sincronização automática de solicitações de "Solicitante Frequente"
-          // Executa em background sem bloquear a UI
+        // Sincronização automática apenas para usuários corporativos
+        if (currentUser?.client_id && !currentUser?.supplier_id && !currentUser?.is_driver) {
           base44.functions.invoke('syncFrequentRequesterData')
             .then(res => {
               if (res?.data?.updated_count > 0) {
@@ -387,19 +404,17 @@ function LayoutContent({ children, currentPageName }) {
               }
             })
             .catch(err => console.warn('[Layout] Erro na sincronização de solicitante:', err));
-        } catch (authError) {
-          setUser(null);
         }
       } catch (error) {
-      console.error('[Layout] Erro ao inicializar:', error);
-      setUser(null);
+        console.error('[Layout] Erro ao inicializar:', error);
+        setUser(null);
       } finally {
-      setIsLoading(false);
+        setIsLoading(false);
       }
-      };
+    };
 
-      initializeApp();
-      }, []);
+    initializeApp();
+  }, [isLoadingAuth, isAuthReady, authUser]);
 
       // Verificar alertas de documentos para fornecedores
       React.useEffect(() => {
@@ -429,7 +444,7 @@ function LayoutContent({ children, currentPageName }) {
   'GerenciarClientes', 'GerenciarVeiculosFornecedores', 'AcompanharSolicitacoes',
   'SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'GerenciarAprovacoes', 'ClientAnalytics',
   'GerenciarPermissoesAdmin', 'TermosAceiteMotoristas', 'GerenciarModulo3', 'GerenciarPlanosModulo3',
-  'DashboardFornecedor', 'MinhasSolicitacoesFornecedor', 'MeusVeiculosFornecedor', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarFaturamento', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'GerenciarPagamentosPrestadores', 'GerenciarPagamentosParceiros', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'GerenciarParceiros',
+  'DashboardFornecedor', 'MinhasSolicitacoesFornecedor', 'MeusVeiculosFornecedor', 'GerenciarManutencaoFrota', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarFaturamento', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'GerenciarPagamentosPrestadores', 'GerenciarPagamentosParceiros', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'GerenciarParceiros',
   'GerenciarFuncionarios',
   'DashboardMotorista', 'MeusPagamentosMotorista', 'MeusDocumentosMotorista',
   'GerenciarEventos', 'Telemetria', 'EventDetails',
@@ -437,7 +452,7 @@ function LayoutContent({ children, currentPageName }) {
   'LocalizacaoMotoristas', 'GerenciarCoordenadores', 'EventDashboard',
   'GerenciarAcessosEventos', 'RelatorioKmPercorrido',
   'RelatorioFinanceiroMotoristas', 'GerenciarLeads', 'GerenciarAvaliacoes',
-  'SmsLogs', 'GerenciarTemas', 'GerenciarTagsPassageiros', 'MonitoramentoSistema', 'GerenciarNotificacoes'
+  'SmsLogs', 'GerenciarTemas', 'GerenciarTagsPassageiros', 'MonitoramentoSistema', 'GerenciarNotificacoes', 'ManualArquitetonico'
   ];
   const isProtectedPage = requiresAuth.includes(currentPageName);
 
@@ -472,9 +487,10 @@ function LayoutContent({ children, currentPageName }) {
 
   React.useEffect(() => {
     if (!isLoading && !user && isProtectedPage) {
-      base44.auth.redirectToLogin(createPageUrl(currentPageName) + location.search);
+      const returnPath = createPageUrl(currentPageName) + location.search;
+      navigate(`/AccessPortal?returnUrl=${encodeURIComponent(returnPath)}`, { replace: true });
     }
-  }, [isLoading, user, isProtectedPage, currentPageName, location.search]);
+  }, [isLoading, user, isProtectedPage, currentPageName, location.search, navigate]);
 
   const allAdminPages = ADMIN_PAGES_CONFIG.map(page => ({
     title: page.name,
@@ -482,6 +498,24 @@ function LayoutContent({ children, currentPageName }) {
     icon: page.icon,
     page: page.id
   }));
+
+  // REDIRECIONAMENTO DEFINITIVO PARA ADMINS - Executa assim que user é carregado
+  React.useEffect(() => {
+    if (!isLoading && user && isAdmin) {
+      const adminPagesList = allAdminPages.map(p => p.page);
+      const isAdminPage = adminPagesList.includes(currentPageName);
+      const isSharedPage = currentPageName === 'MeusDados';
+      const isEventDetailsPage = currentPageName === 'EventDetails';
+      const isManualPage = currentPageName === 'ManualArquitetonico';
+      const isClientAuditPage = currentPageName === 'ClientAuditAccess';
+      
+      // Admin NUNCA deve estar em páginas públicas ou de usuário comum
+      if (!isAdminPage && !isSharedPage && !isEventDetailsPage && !isManualPage && !isClientAuditPage) {
+        console.log('[Layout] REDIRECIONAMENTO ADMIN FORÇADO: Admin detectado fora de página administrativa, redirecionando para AdminDashboard');
+        navigate(createPageUrl('AdminDashboard') + location.search, { replace: true });
+      }
+    }
+  }, [isLoading, user, isAdmin, currentPageName, navigate, allAdminPages, location.search]);
 
   React.useEffect(() => {
     const checkDriverTerms = async () => {
@@ -528,25 +562,7 @@ function LayoutContent({ children, currentPageName }) {
     }
   }, [isLoading, user, isCorporateUser, currentPageName, navigate, location.search]);
 
-  React.useEffect(() => {
-    if (!isLoading && user && isAdmin) {
-      // Admin redirect logic
-      const adminPagesList = allAdminPages.map(p => p.page);
-      const isAdminPage = adminPagesList.includes(currentPageName);
-      const isPublicPage = currentPageName === 'NovaReserva' || currentPageName === 'CadastroInteresse';
-      const isSharedPage = currentPageName === 'MeusDados';
-      const isEventDetailsPage = currentPageName === 'EventDetails';
-      const isHomePage = currentPageName === 'Inicio' || currentPageName === 'Index' || currentPageName === 'Home';
-      // Admin at root path (/) = just logged in. Redirect to dashboard.
-      // Admin at /NovaReserva = navigated intentionally to book a trip. Allow it.
-      const isRootPath = location.pathname === '/';
 
-      if ((!isAdminPage && !isPublicPage && !isSharedPage && !isEventDetailsPage) || isHomePage || isRootPath) {
-        console.log('[Layout] Redirecionando admin para AdminDashboard');
-        navigate(createPageUrl('AdminDashboard') + location.search, { replace: true });
-      }
-    }
-  }, [isLoading, user, isAdmin, currentPageName, navigate, allAdminPages, location.search]);
 
   React.useEffect(() => {
     let title = "TransferOnline - Sistema de Reservas de Transfer";
@@ -609,6 +625,8 @@ function LayoutContent({ children, currentPageName }) {
       title = "Minhas Solicitações (Fornecedor) | TransferOnline";
     } else if (currentPageName === 'MeusVeiculosFornecedor') {
       title = "Meus Veículos (Fornecedor) | TransferOnline";
+    } else if (currentPageName === 'GerenciarManutencaoFrota') {
+      title = "Manutenção da Frota | TransferOnline";
     } else if (currentPageName === 'MeusMotoristas') {
       title = "Meus Motoristas (Fornecedor) | TransferOnline";
     } else if (currentPageName === 'GerenciarFuncionarios') {
@@ -709,7 +727,7 @@ function LayoutContent({ children, currentPageName }) {
     {
       group: 'Suporte',
       items: [
-        { title: 'Ajuda / Tour', url: createPageUrl('SolicitarViagemCorporativa') + '?tutorial=true', icon: HelpCircle },
+        { title: 'Ajuda / Manual', url: createPageUrl('ManualArquitetonico') + '?role=corporate', icon: HelpCircle },
       ]
     }
   ].filter(group => group.items.length > 0);
@@ -736,6 +754,7 @@ function LayoutContent({ children, currentPageName }) {
           { title: 'Meus Parceiros', url: createPageUrl('GerenciarParceiros'), icon: Users }
         ] : []),
         { title: 'Meus Veículos', url: createPageUrl('MeusVeiculosFornecedor'), icon: Car },
+        { title: 'Manutenção da Frota', url: createPageUrl('GerenciarManutencaoFrota'), icon: Wrench },
         { title: 'Meus Motoristas', url: createPageUrl('MeusMotoristas'), icon: Users, badge: driverAlertsCount > 0 ? driverAlertsCount : null, badgeColor: 'bg-red-500' },
         { title: 'Coordenadores', url: createPageUrl('GerenciarCoordenadores'), icon: UserCheck },
         ...(supplierData?.features?.receptive_management ? [
@@ -780,7 +799,7 @@ function LayoutContent({ children, currentPageName }) {
     {
       group: 'Suporte',
       items: [
-        { title: 'Ajuda / Tour', url: createPageUrl('IndicadoresFornecedor') + '?tutorial=true', icon: HelpCircle }
+        { title: 'Ajuda / Manual', url: createPageUrl('ManualArquitetonico') + '?role=supplier', icon: HelpCircle }
       ]
     }
   ].filter(group => group.items.length > 0);
@@ -807,8 +826,8 @@ function LayoutContent({ children, currentPageName }) {
       icon: User,
     },
     {
-      title: 'Ajuda / Tour',
-      url: createPageUrl('DashboardMotoristaV2') + '?tutorial=true',
+      title: 'Ajuda / Manual',
+      url: createPageUrl('ManualArquitetonico') + '?role=driver',
       icon: HelpCircle,
     }
     ];
@@ -850,15 +869,16 @@ function LayoutContent({ children, currentPageName }) {
   const shouldRedirect = React.useMemo(() => {
     if (isLoading || !user) return false;
 
-    // Admin Redirect Check
+    // Admin Redirect Check - ADMINS NUNCA podem estar em páginas públicas
     if (isAdmin) {
       const adminPagesList = allAdminPages.map(p => p.page);
       const isAdminPage = adminPagesList.includes(currentPageName);
-      const isPublicPage = currentPageName === 'NovaReserva' || currentPageName === 'CadastroInteresse';
       const isSharedPage = currentPageName === 'MeusDados';
       const isEventDetailsPage = currentPageName === 'EventDetails';
+      const isManualPage = currentPageName === 'ManualArquitetonico';
+      const isClientAuditPage = currentPageName === 'ClientAuditAccess';
 
-      if (!isAdminPage && !isPublicPage && !isSharedPage && !isEventDetailsPage) return true;
+      if (!isAdminPage && !isSharedPage && !isEventDetailsPage && !isManualPage && !isClientAuditPage) return true;
     }
 
     // Driver Redirect Check
@@ -1057,7 +1077,12 @@ function LayoutContent({ children, currentPageName }) {
                   <User className="w-4 h-4 mr-2" />
                   Meus Dados
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => base44.auth.logout()} className="text-red-600 focus:text-red-600 focus:bg-red-50">
+                <DropdownMenuItem onClick={() => {
+                  localStorage.removeItem('base44_access_token');
+                  localStorage.removeItem('token');
+                  localStorage.removeItem('access_token');
+                  navigate('/AccessPortal', { replace: true });
+                }} className="text-red-600 focus:text-red-600 focus:bg-red-50">
                   <LogOut className="w-4 h-4 mr-2" />
                   {t('common.logout')}
                 </DropdownMenuItem>
@@ -1066,7 +1091,7 @@ function LayoutContent({ children, currentPageName }) {
           ) : (
             <div className={`space-y-2 w-full ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
               <Button
-                onClick={() => base44.auth.redirectToLogin()}
+                onClick={() => navigate('/AccessPortal')}
                 variant="outline"
                 className={`w-full ${isCollapsed ? 'px-0' : ''}`}
                 title={isCollapsed ? "Login" : ""}
@@ -1368,7 +1393,10 @@ function LayoutContent({ children, currentPageName }) {
                         <button
                           onClick={() => {
                             setIsMobileMenuOpen(false);
-                            base44.auth.logout();
+                            localStorage.removeItem('base44_access_token');
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('access_token');
+                            navigate('/AccessPortal', { replace: true });
                           }}
                           className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         >
@@ -1380,7 +1408,7 @@ function LayoutContent({ children, currentPageName }) {
                       <Button
                         onClick={() => {
                           setIsMobileMenuOpen(false);
-                          base44.auth.redirectToLogin();
+                          navigate('/AccessPortal');
                         }}
                         variant="outline"
                         className="w-full"
@@ -1432,7 +1460,7 @@ function LayoutContent({ children, currentPageName }) {
         </div>
       </main>
 
-      {!isDriver && !isSupplier && <WhatsAppButton className="mb-[calc(4rem+env(safe-area-inset-bottom))] lg:mb-0" />}
+      {!isDriver && !isSupplier && !isPublicQuoteView && <WhatsAppButton className="mb-[calc(4rem+env(safe-area-inset-bottom))] lg:mb-0" />}
 
       {/* Mobile Bottom Navigation */}
       {!isPublicQuoteView && currentPageName !== 'ReceptiveListEventView' && (

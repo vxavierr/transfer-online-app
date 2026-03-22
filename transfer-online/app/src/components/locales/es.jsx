@@ -322,7 +322,12 @@ export default {
     "continueToPayment": "Continuar al Pago",
     "selectVehiclePlaceholder": "Seleccione un vehículo...",
     "passengers": "pasajeros",
-    "legPrice": "Precio de este viaje:"
+    "legPrice": "Precio de este viaje:",
+    "multiTripPricingInfoTitle": "Cómo se calcula el valor",
+    "multiTripPricingInfoDesc": "Cada viaje se calcula individualmente y el valor final del itinerario es la suma de todos los tramos.",
+    "multiTripCalculationProgress": "{completed} de {total} viajes con valor calculado",
+    "multiTripWaitingCalculation": "Esperando el cálculo de este tramo...",
+    "multiTripPaymentLocked": "El pago se habilitará cuando todos los viajes tengan su valor calculado."
   },
   bookingForm: {
     "title": "Datos de la Reserva",
@@ -384,6 +389,11 @@ export default {
     "emailLabel": "Email",
     "passengerEmailPlaceholder": "email@pasajero.com",
     "yourEmailPlaceholder": "su@email.com",
-    "phonePlaceholder": "(00) 00000-0000"
+    "phonePlaceholder": "(00) 00000-0000",
+    "additionalPassengersTitle": "Demás pasajeros",
+    "leadPassengerHelper": "El pasajero 1 usa el nombre informado arriba.",
+    "passengerNameLabel": "Nombre del Pasajero {number}",
+    "passengerNamePlaceholder": "Ingrese el nombre del pasajero {number}",
+    "errPassengerNames": "Complete el nombre de todos los pasajeros"
   }
 };

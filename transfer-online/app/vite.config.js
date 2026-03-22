@@ -9,8 +9,6 @@ export default defineConfig({
     base44({
       // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
       // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
-      // legacySDKImports enabled: app uses @/functions/* imports (legacy Base44 pattern)
-      // Required for build to succeed — see codebase-audit.md section 11 (Base44 coupling)
       legacySDKImports: true
     }),
     react(),

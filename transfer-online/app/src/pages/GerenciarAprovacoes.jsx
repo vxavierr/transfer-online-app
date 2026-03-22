@@ -88,7 +88,7 @@ export default function GerenciarAprovacoes() {
         setUser(currentUser);
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarAprovacoes';
       }
     };
 

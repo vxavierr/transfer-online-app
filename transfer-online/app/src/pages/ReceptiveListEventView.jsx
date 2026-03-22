@@ -26,7 +26,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BrowserService } from '@/native';
 
 export default function ReceptiveListEventView() {
     const [searchParams] = useSearchParams();
@@ -632,7 +631,7 @@ export default function ReceptiveListEventView() {
         // Fallback to web after a delay
         setTimeout(() => {
             const webUrl = `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${destination}`;
-            BrowserService.open(webUrl, '_blank');
+            window.open(webUrl, '_blank');
         }, 1000);
     };
 
@@ -1071,10 +1070,10 @@ export default function ReceptiveListEventView() {
                                         <DropdownMenuSeparator />
                                         {passenger.passenger_phone && (
                                             <>
-                                                <DropdownMenuItem onClick={() => BrowserService.open(`tel:${passenger.passenger_phone}`)}>
+                                                <DropdownMenuItem onClick={() => window.open(`tel:${passenger.passenger_phone}`, '_system')}>
                                                     <Phone className="w-4 h-4 mr-2" /> Ligar
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => BrowserService.open(`https://wa.me/${passenger.passenger_phone.replace(/\D/g, '')}`, '_blank')}>
+                                                <DropdownMenuItem onClick={() => window.open(`https://wa.me/${passenger.passenger_phone.replace(/\D/g, '')}`, '_blank')}>
                                                     <MessageCircle className="w-4 h-4 mr-2" /> Mensagem WhatsApp
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem onClick={() => handleSendSMS(passenger, passenger.event_trip_id)}>
@@ -1371,10 +1370,10 @@ export default function ReceptiveListEventView() {
                                                         <DropdownMenuSeparator />
                                                         {passenger.passenger_phone && (
                                                             <>
-                                                                <DropdownMenuItem onClick={() => BrowserService.open(`tel:${passenger.passenger_phone}`)}>
+                                                                <DropdownMenuItem onClick={() => window.open(`tel:${passenger.passenger_phone}`, '_system')}>
                                                                     <Phone className="w-4 h-4 mr-2" /> Ligar
                                                                 </DropdownMenuItem>
-                                                                <DropdownMenuItem onClick={() => BrowserService.open(`https://wa.me/${passenger.passenger_phone.replace(/\D/g, '')}`, '_blank')}>
+                                                                <DropdownMenuItem onClick={() => window.open(`https://wa.me/${passenger.passenger_phone.replace(/\D/g, '')}`, '_blank')}>
                                                                     <MessageCircle className="w-4 h-4 mr-2" /> Mensagem WhatsApp
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem onClick={() => handleSendSMS(passenger, passenger.event_trip_id)}>

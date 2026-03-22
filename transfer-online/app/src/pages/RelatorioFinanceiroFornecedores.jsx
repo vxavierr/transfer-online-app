@@ -44,7 +44,7 @@ export default function RelatorioFinanceiroFornecedores() {
         setUser(currentUser);
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FRelatorioFinanceiroFornecedores';
       }
     };
 

@@ -57,7 +57,7 @@ export default function EnviarMensagemMotoristas() {
         setIsLoadingAuth(false);
       } catch (error) {
         console.error('Auth error:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FEnviarMensagemMotoristas';
       }
     };
     checkAuth();

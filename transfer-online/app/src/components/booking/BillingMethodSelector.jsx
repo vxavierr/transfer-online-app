@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -22,11 +22,19 @@ export default function BillingMethodSelector({
   onChange,
   currentUser,
   availableFinancialResponsibles = [],
-  isMasterUser
+  isMasterUser,
+  clientRequiresPurchaseOrder = false
 }) {
   const [showResponsibleSelector, setShowResponsibleSelector] = useState(false);
   const [isManualEntry, setIsManualEntry] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Safety reset: if purchase_order was selected but option is no longer available, reset to invoiced
+  React.useEffect(() => {
+    if (billingData.billing_method === 'purchase_order' && !clientRequiresPurchaseOrder) {
+      handleMethodChange('invoiced');
+    }
+  }, [clientRequiresPurchaseOrder]);
 
   const handleMethodChange = (method) => {
     let newBillingData = {
@@ -499,54 +507,58 @@ export default function BillingMethodSelector({
           </div>
         </Card>
 
-        <Card
-          className={`cursor-pointer transition-all border-2 ${
-            billingData.billing_method === 'purchase_order'
-              ? 'border-purple-500 bg-purple-50'
-              : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
-          }`}
-          onClick={() => handleMethodChange('purchase_order')}
-        >
-          <div className="p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start gap-3 flex-1">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  billingData.billing_method === 'purchase_order' ? 'bg-purple-600' : 'bg-gray-200'
-                }`}>
-                  <Receipt className={`w-5 h-5 ${
-                    billingData.billing_method === 'purchase_order' ? 'text-white' : 'text-gray-600'
-                  }`} />
+        {clientRequiresPurchaseOrder && (
+          <Card
+            className={`cursor-pointer transition-all border-2 ${
+              billingData.billing_method === 'purchase_order'
+                ? 'border-purple-500 bg-purple-50'
+                : 'border-gray-200 hover:border-purple-300 hover:bg-gray-50'
+            }`}
+            onClick={() => handleMethodChange('purchase_order')}
+          >
+            <div className="p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3 flex-1">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    billingData.billing_method === 'purchase_order' ? 'bg-purple-600' : 'bg-gray-200'
+                  }`}>
+                    <Receipt className={`w-5 h-5 ${
+                      billingData.billing_method === 'purchase_order' ? 'text-white' : 'text-gray-600'
+                    }`} />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900 mb-1">Ordem de Compra</h4>
+                    <p className="text-sm text-gray-600">Já possui um número de pedido/OC</p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-gray-900 mb-1">Ordem de Compra</h4>
-                  <p className="text-sm text-gray-600">Já possui um número de pedido/OC</p>
-                </div>
+                {billingData.billing_method === 'purchase_order' && (
+                  <CheckCircle className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                )}
               </div>
+
               {billingData.billing_method === 'purchase_order' && (
-                <CheckCircle className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                <div className="mt-4 pt-4 border-t border-purple-200 space-y-2">
+                  <Label className="text-sm font-semibold">
+                    Número da Ordem de Compra / Pedido *
+                  </Label>
+                  <Input
+                    placeholder="Ex: OC-2025-001234"
+                    value={billingData.purchase_order_number || ''}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      onChange({
+                        ...billingData,
+                        purchase_order_number: e.target.value
+                      });
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full font-mono"
+                  />
+                </div>
               )}
             </div>
-
-            {billingData.billing_method === 'purchase_order' && (
-              <div className="mt-4 pt-4 border-t border-purple-200 space-y-2">
-                <Label className="text-sm font-semibold">Número da Ordem de Compra / Pedido *</Label>
-                <Input
-                  placeholder="Ex: OC-2025-001234"
-                  value={billingData.purchase_order_number || ''}
-                  onChange={(e) => {
-                    e.stopPropagation();
-                    onChange({
-                      ...billingData,
-                      purchase_order_number: e.target.value
-                    });
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full font-mono"
-                />
-              </div>
-            )}
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
     </div>
   );

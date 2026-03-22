@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { GeoService } from '@/native';
 import { Badge } from '@/components/ui/badge';
 import { Activity } from 'lucide-react';
 
@@ -250,31 +249,25 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
     setStats({ speed: 0, maxSpeed: 0, distanceKm: 0, events: 0 });
   };
 
-  const startGPSMonitoring = async () => {
-    if (!GeoService.isAvailable()) return;
+  const startGPSMonitoring = () => {
+    if (!('geolocation' in navigator)) return;
 
-    // TelemetryTracker usa background tracking — é o componente principal
-    // responsável pelo rastreamento contínuo durante a viagem.
-    const watchId = await GeoService.startBackgroundTracking(
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000, // Aumentado para dar mais chance em background
+      maximumAge: 0
+    };
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
       handlePositionUpdate,
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        backgroundMessage: 'Telemetria de viagem ativa',
-        backgroundTitle: 'TransferOnline',
-        distanceFilter: 5, // Telemetria precisa de granularidade maior (5m vs 10m)
-      }
-    ).catch((err) => {
-      console.warn('[TelemetryTracker] GPS Error:', err);
-      return null;
-    });
-
-    watchIdRef.current = watchId;
+      (err) => console.warn('GPS Error', err),
+      options
+    );
   };
 
   const stopGPSMonitoring = () => {
     if (watchIdRef.current !== null) {
-      GeoService.stopBackgroundTracking(watchIdRef.current);
+      navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
   };

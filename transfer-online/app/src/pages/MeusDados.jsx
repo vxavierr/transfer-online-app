@@ -71,7 +71,7 @@ export default function MeusDados() {
         setIsLoading(false);
       } catch (error) {
         console.error('Erro ao carregar usuário:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FMeusDados';
       }
     };
     loadUser();

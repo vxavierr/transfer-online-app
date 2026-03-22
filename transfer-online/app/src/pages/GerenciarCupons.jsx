@@ -107,7 +107,7 @@ export default function GerenciarCupons() {
         }
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarCupons';
       }
     };
 

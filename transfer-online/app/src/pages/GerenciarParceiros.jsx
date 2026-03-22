@@ -65,7 +65,7 @@ export default function GerenciarParceiros() {
         setUser(currentUser);
       } catch (err) {
         console.error(err);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarParceiros';
       } finally {
         setIsCheckingAuth(false);
       }

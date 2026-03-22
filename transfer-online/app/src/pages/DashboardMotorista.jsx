@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { GeoService, BrowserService, StorageService } from '@/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -91,16 +90,19 @@ export default function DashboardMotorista() {
 
   useEffect(() => {
     // Solicitar permissão de GPS no início se ainda não foi concedida/solicitada
-    const askForGPS = async () => {
-      const hasPermission = await StorageService.get('gps_permission_granted') === 'true';
-      if (!hasPermission && GeoService.isAvailable()) {
-        try {
-          await GeoService.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 });
-          await StorageService.set('gps_permission_granted', 'true');
-        } catch (error) {
-          console.warn('GPS request on dashboard denied/error:', error);
-          await StorageService.set('gps_permission_granted', 'false');
-        }
+    const askForGPS = () => {
+      const hasPermission = localStorage.getItem('gps_permission_granted') === 'true';
+      if (!hasPermission && 'geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          () => {
+            localStorage.setItem('gps_permission_granted', 'true');
+          },
+          (error) => {
+            console.warn('GPS request on dashboard denied/error:', error);
+            localStorage.setItem('gps_permission_granted', 'false');
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
       }
     };
 
@@ -272,7 +274,7 @@ export default function DashboardMotorista() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FDashboardMotorista';
       }
     };
 
@@ -523,7 +525,7 @@ export default function DashboardMotorista() {
     
     acknowledgeTripMutation.mutate(trip.id);
     
-    BrowserService.open(calendarUrl, '_blank');
+    window.open(calendarUrl, '_blank');
   };
 
   const handleDismissNewTrip = (tripId) => {
@@ -830,7 +832,7 @@ function TripsList({ trips, title, emptyMessage, onViewTrip, onAddToCalendar, sh
       // Usar esquema waze:// para forçar abertura do app
       window.location.href = `waze://?q=${encoded}&navigate=yes`;
     } else {
-      BrowserService.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
     }
   };
 

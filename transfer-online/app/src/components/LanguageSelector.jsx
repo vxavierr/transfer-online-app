@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Globe } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 
-export default function LanguageSelector({ isCollapsed = false }) {
+export default function LanguageSelector({ isCollapsed = false, compact = false }) {
   const { language, changeLanguage } = useLanguage();
 
   const languages = [
@@ -11,6 +11,27 @@ export default function LanguageSelector({ isCollapsed = false }) {
     { code: 'en', name: 'English', flag: '🇺🇸' },
     { code: 'es', name: 'Español', flag: '🇪🇸' }
   ];
+
+  // Modo compacto: apenas bandeira
+  if (compact) {
+    return (
+      <Select value={language} onValueChange={changeLanguage}>
+        <SelectTrigger className="w-12 h-9 px-2 border-gray-300 hover:border-gray-400 bg-white">
+          <span className="text-xl leading-none">{languages.find(l => l.code === language)?.flag}</span>
+        </SelectTrigger>
+        <SelectContent>
+          {languages.map((lang) => (
+            <SelectItem key={lang.code} value={lang.code}>
+              <span className="flex items-center gap-2">
+                <span className="text-lg">{lang.flag}</span>
+                <span className="text-sm">{lang.name}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
 
   return (
     <div className={`flex items-center gap-2 ${isCollapsed ? 'justify-center w-full' : ''}`}>

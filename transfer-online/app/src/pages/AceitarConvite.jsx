@@ -60,8 +60,8 @@ export default function AceitarConvite() {
   }, [invitationId]);
 
   const handleLogin = () => {
-    const currentUrl = window.location.href.replace(window.location.origin, '');
-    base44.auth.redirectToLogin(currentUrl);
+    const currentUrl = window.location.pathname + window.location.search;
+    window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(currentUrl)}`;
   };
 
   const processInvitation = async (id) => {

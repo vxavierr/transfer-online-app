@@ -81,7 +81,7 @@ export default function TermoAceiteMotorista() {
         setIsLoading(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FTermoAceiteMotorista';
       }
     };
 
@@ -107,7 +107,7 @@ export default function TermoAceiteMotorista() {
         // Se tiver login, dashboard
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('token')) {
-           base44.auth.redirectToLogin();
+           window.location.href = '/AccessPortal?returnUrl=%2FTermoAceiteMotorista';
         } else {
            window.location.href = '/DashboardMotorista';
         }

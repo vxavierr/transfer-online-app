@@ -183,7 +183,7 @@ export default function GerenciarCotacoes() {
         }
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarCotacoes';
       }
     };
 

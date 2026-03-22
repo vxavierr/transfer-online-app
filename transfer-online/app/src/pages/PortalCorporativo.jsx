@@ -22,11 +22,11 @@ export default function PortalCorporativo() {
           }
         } else {
           // Se não estiver logado, redireciona para login e volta para esta mesma página para decidir
-          base44.auth.redirectToLogin(window.location.href);
+          navigate('/AccessPortal?returnUrl=%2FPortalCorporativo', { replace: true });
         }
       } catch (error) {
         // Em caso de erro (ex: não autenticado), força login
-        base44.auth.redirectToLogin(window.location.href);
+        navigate('/AccessPortal?returnUrl=%2FPortalCorporativo', { replace: true });
       }
     };
 

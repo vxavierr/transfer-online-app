@@ -17,11 +17,16 @@ const PLACEHOLDERS = [
   { key: "{{vehicle_info}}", desc: "Modelo e placa" },
   { key: "{{origin}}", desc: "Origem" },
   { key: "{{destination}}", desc: "Destino" },
+  { key: "{{date}}", desc: "Data da viagem" },
+  { key: "{{time}}", desc: "Horário da viagem" },
+  { key: "{{trip_url}}", desc: "Link da viagem do motorista" },
   { key: "{{timeline_url}}", desc: "Link de rastreamento" },
   { key: "{{#timeline_url}}texto{{/timeline_url}}", desc: "Bloco condicional (só renderiza se URL existir)" },
+  { key: "{{#trip_url}}texto{{/trip_url}}", desc: "Bloco condicional para link da viagem" },
 ];
 
 const RECIPIENTS = [
+  { key: "send_to_driver", label: "Motorista" },
   { key: "send_to_passenger", label: "Passageiro" },
   { key: "send_to_requester", label: "Solicitante" },
   { key: "send_to_client_contact", label: "Contato do Cliente" },
@@ -36,6 +41,7 @@ export default function NotificationTemplateForm({ template, onSave, onClose }) 
     subject_template: "",
     body_template: "",
     is_enabled: true,
+    send_to_driver: false,
     send_to_passenger: true,
     send_to_requester: true,
     send_to_client_contact: false,
@@ -63,6 +69,7 @@ export default function NotificationTemplateForm({ template, onSave, onClose }) 
               <Select value={form.event_type} onValueChange={v => setForm({ ...form, event_type: v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="lembrete_motorista">Lembrete ao Motorista</SelectItem>
                   <SelectItem value="chegou_origem">Chegou à Origem</SelectItem>
                   <SelectItem value="passageiro_embarcou">Passageiro Embarcou</SelectItem>
                   <SelectItem value="chegou_destino">Chegou ao Destino</SelectItem>

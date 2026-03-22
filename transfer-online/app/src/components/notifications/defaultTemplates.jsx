@@ -221,6 +221,54 @@ export const DEFAULT_TEMPLATES = [
     body_template: "<p>Hola <strong>{{recipient_name}}</strong>,</p><p>El viaje {{trip_number}} fue finalizado con éxito por el conductor <strong>{{driver_name}}</strong> (carro {{vehicle_info}}).</p>{{#timeline_url}}<p>Detalles: <a href=\"{{timeline_url}}\">{{timeline_url}}</a></p>{{/timeline_url}}"
   },
 
+  // ─── PT / WhatsApp - Lembrete Motorista ──────────────────────────────────────
+  {
+    event_type: "lembrete_motorista", channel: "whatsapp", language: "pt", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "WhatsApp PT - Lembrete de viagem ao motorista",
+    subject_template: "",
+    body_template: "🔔 *Lembrete de Viagem*\n\nOlá {{recipient_name}}, sua viagem é daqui a pouco!\n\n📅 Data: {{date}}\n⏰ Horário: {{time}}\n📍 Origem: {{origin}}\n🏁 Destino: {{destination}}\n👥 Passageiro: {{passenger_name}}\n\n{{#trip_url}}🔗 Acesse os detalhes da viagem:\n{{trip_url}}{{/trip_url}}"
+  },
+  {
+    event_type: "lembrete_motorista", channel: "email", language: "pt", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "Email PT - Lembrete de viagem ao motorista",
+    subject_template: "🔔 Lembrete de Viagem - {{trip_number}}",
+    body_template: "<p>Olá <strong>{{recipient_name}}</strong>,</p><p>Sua viagem começa em breve.</p><div style=\"background:#f3f4f6;padding:15px;border-radius:8px;margin:15px 0\"><p><strong>📅 Data:</strong> {{date}}<br><strong>⏰ Horário:</strong> {{time}}<br><strong>📍 Origem:</strong> {{origin}}<br><strong>🏁 Destino:</strong> {{destination}}<br><strong>👥 Passageiro:</strong> {{passenger_name}}</p></div>{{#trip_url}}<p><a href=\"{{trip_url}}\" style=\"background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold\">Ver Detalhes da Viagem</a></p>{{/trip_url}}"
+  },
+
+  // ─── EN / Driver Reminder ─────────────────────────────────────────────────────
+  {
+    event_type: "lembrete_motorista", channel: "whatsapp", language: "en", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "WhatsApp EN - Driver trip reminder",
+    subject_template: "",
+    body_template: "🔔 *Trip Reminder*\n\nHello {{recipient_name}}, your trip starts soon.\n\n📅 Date: {{date}}\n⏰ Time: {{time}}\n📍 Origin: {{origin}}\n🏁 Destination: {{destination}}\n👥 Passenger: {{passenger_name}}\n\n{{#trip_url}}🔗 Open trip details:\n{{trip_url}}{{/trip_url}}"
+  },
+  {
+    event_type: "lembrete_motorista", channel: "email", language: "en", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "Email EN - Driver trip reminder",
+    subject_template: "🔔 Trip Reminder - {{trip_number}}",
+    body_template: "<p>Hello <strong>{{recipient_name}}</strong>,</p><p>Your trip starts soon.</p><div style=\"background:#f3f4f6;padding:15px;border-radius:8px;margin:15px 0\"><p><strong>📅 Date:</strong> {{date}}<br><strong>⏰ Time:</strong> {{time}}<br><strong>📍 Origin:</strong> {{origin}}<br><strong>🏁 Destination:</strong> {{destination}}<br><strong>👥 Passenger:</strong> {{passenger_name}}</p></div>{{#trip_url}}<p><a href=\"{{trip_url}}\" style=\"background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold\">View Trip Details</a></p>{{/trip_url}}"
+  },
+
+  // ─── ES / Recordatorio al Conductor ──────────────────────────────────────────
+  {
+    event_type: "lembrete_motorista", channel: "whatsapp", language: "es", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "WhatsApp ES - Recordatorio de viaje al conductor",
+    subject_template: "",
+    body_template: "🔔 *Recordatorio de Viaje*\n\nHola {{recipient_name}}, su viaje empieza pronto.\n\n📅 Fecha: {{date}}\n⏰ Hora: {{time}}\n📍 Origen: {{origin}}\n🏁 Destino: {{destination}}\n👥 Pasajero: {{passenger_name}}\n\n{{#trip_url}}🔗 Abra los detalles del viaje:\n{{trip_url}}{{/trip_url}}"
+  },
+  {
+    event_type: "lembrete_motorista", channel: "email", language: "es", is_enabled: true,
+    send_to_driver: true, send_to_passenger: false, send_to_requester: false, send_to_client_contact: false, send_to_additional_phones: false,
+    description: "Email ES - Recordatorio de viaje al conductor",
+    subject_template: "🔔 Recordatorio de Viaje - {{trip_number}}",
+    body_template: "<p>Hola <strong>{{recipient_name}}</strong>,</p><p>Su viaje empieza pronto.</p><div style=\"background:#f3f4f6;padding:15px;border-radius:8px;margin:15px 0\"><p><strong>📅 Fecha:</strong> {{date}}<br><strong>⏰ Hora:</strong> {{time}}<br><strong>📍 Origen:</strong> {{origin}}<br><strong>🏁 Destino:</strong> {{destination}}<br><strong>👥 Pasajero:</strong> {{passenger_name}}</p></div>{{#trip_url}}<p><a href=\"{{trip_url}}\" style=\"background:#2563eb;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold\">Ver Detalles del Viaje</a></p>{{/trip_url}}"
+  },
+
   // ─── PT / WhatsApp - Avaliação ───────────────────────────────────────────────
   {
     event_type: "solicitar_avaliacao", channel: "whatsapp", language: "pt", is_enabled: true,

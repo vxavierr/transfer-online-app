@@ -97,6 +97,7 @@ import GerenciarVeiculosFornecedores from './pages/GerenciarVeiculosFornecedores
 import GestaoRotas from './pages/GestaoRotas';
 import Index from './pages/Index';
 import LocalizacaoMotoristas from './pages/LocalizacaoMotoristas';
+import ManualArquitetonico from './pages/ManualArquitetonico';
 import MeusDados from './pages/MeusDados';
 import MeusMotoristas from './pages/MeusMotoristas';
 import MeusVeiculosFornecedor from './pages/MeusVeiculosFornecedor';
@@ -183,6 +184,7 @@ export const PAGES = {
     "GestaoRotas": GestaoRotas,
     "Index": Index,
     "LocalizacaoMotoristas": LocalizacaoMotoristas,
+    "ManualArquitetonico": ManualArquitetonico,
     "MeusDados": MeusDados,
     "MeusMotoristas": MeusMotoristas,
     "MeusVeiculosFornecedor": MeusVeiculosFornecedor,

@@ -1,56 +1,23 @@
 import './App.css'
+import { useEffect, useState } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import VisualEditAgent from '@/lib/VisualEditAgent'
 import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter, MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
-// ARCH-EXCEPTION: App.jsx importa Capacitor diretamente para bootstrap do router em nível de módulo.
-// Esta é a única exceção permitida — a seleção do Router (MemoryRouter vs BrowserRouter) precisa
-// ocorrer antes da montagem da árvore React, tornando inviável usar src/native como intermediário.
-// Todos os outros componentes DEVEM importar via '@/native'.
-import { Capacitor } from '@capacitor/core';
+import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
-import { useEffect, useRef } from 'react';
-import { appParams } from '@/lib/app-params';
-
-// Use MemoryRouter on native platforms (Capacitor) — BrowserRouter requires HTML5 history API
-// which is not available under capacitor:// or https://localhost WebView schemes.
-// On web, BrowserRouter is kept for normal browser navigation and deep link support.
-const isNative = Capacitor.isNativePlatform();
-
-/**
- * Extracts the path from a from_url query parameter.
- * The Base44 SDK passes from_url after OAuth login so the app can restore
- * the intended destination. In a WebView the full URL is capacitor://localhost/SomePage,
- * so we only need the pathname part for MemoryRouter.
- *
- * Returns '/' if no valid from_url is found.
- */
-function getNativeInitialEntry() {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const fromUrl = params.get('from_url');
-    if (fromUrl) {
-      const decoded = decodeURIComponent(fromUrl);
-      const url = new URL(decoded, window.location.origin);
-      // Only use the pathname so MemoryRouter gets a valid relative path
-      return url.pathname || '/';
-    }
-  } catch (_) {
-    // Malformed URL — fall through to default
-  }
-  return '/';
-}
-
-const nativeInitialEntry = isNative ? getNativeInitialEntry() : '/';
-
-const Router = isNative
-  ? (props) => <MemoryRouter initialEntries={[nativeInitialEntry]} {...props} />
-  : BrowserRouter;
+import { base44 } from '@/api/base44Client';
+import GerenciarManutencaoFrota from './pages/GerenciarManutencaoFrota';
+import ClientAuditAccess from './pages/ClientAuditAccess';
+import ApresentacaoClientesCorporativos from './pages/ApresentacaoClientesCorporativos';
+import ApresentacaoFornecedores from './pages/ApresentacaoFornecedores';
+import Demonstracao from './pages/Demonstracao';
+import AccessPortal from './pages/AccessPortal';
+import { isNativePlatform } from '@/native';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -60,51 +27,82 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
   : <>{children}</>;
 
-/**
- * PostLoginNavigator — runs inside the Router tree so it can call useNavigate().
- *
- * Problem: In Capacitor, the Base44 SDK redirects to login via window.location.href,
- * passing from_url = window.location.href (e.g. "capacitor://localhost/").
- * After a successful login the server redirects back to that URL with ?access_token=...
- * The MemoryRouter starts at nativeInitialEntry which is "/" → renders NovaReserva.
- * The Layout's role-based redirect logic only fires when currentPageName is one of
- * 'Home'/'Index'/'Inicio', so it never triggers on NovaReserva.
- *
- * Fix: When on native AND the app just completed a login (access_token was present in
- * the URL query string) AND we ended up at "/" (no specific from_url was encoded),
- * navigate to "/Index" so the Layout's redirect logic can route the user to the
- * correct dashboard based on their role (admin → AdminDashboard, driver → DashboardMotoristaV2, etc.).
- *
- * This component is a no-op on web (BrowserRouter handles navigation natively).
- */
-const PostLoginNavigator = () => {
-  const navigate = useNavigate();
-  const { isAuthenticated, isLoadingAuth } = useAuth();
-  const handled = useRef(false);
+const AdminOnlyRoute = ({ children }) => {
+  const [isChecking, setIsChecking] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    if (!isNative) return;
-    if (isLoadingAuth) return;
-    if (handled.current) return;
+    base44.auth.me()
+      .then((user) => {
+        const hasAdminAccess = user?.role === 'admin' || user?.email === 'fernandotransferonline@gmail.com';
+        setIsAdmin(hasAdminAccess);
+        setIsChecking(false);
+        if (!user) {
+          const returnPath = window.location.pathname + window.location.search;
+          window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(returnPath)}`;
+        }
+      })
+      .catch(() => {
+        setIsChecking(false);
+        const returnPath = window.location.pathname + window.location.search;
+        window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(returnPath)}`;
+      });
+  }, []);
 
-    // appParams.token is non-null only when an access_token was present in the URL at startup
-    // (app-params.js removes it from the URL via replaceState during module initialization).
-    // This means: token in appParams = app was opened via an OAuth redirect (post-login).
-    const cameFromLogin = Boolean(appParams.token);
+  if (isChecking) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
-    // Only redirect when: just finished a login flow AND ended up at root (no specific from_url)
-    if (isAuthenticated && cameFromLogin && nativeInitialEntry === '/') {
-      handled.current = true;
-      // Navigate to Index so Layout's role-based redirect fires correctly
-      navigate('/Index', { replace: true });
+  if (!isAdmin) {
+    return <PageNotFound />;
+  }
+
+  return children;
+};
+
+/**
+ * Registra um navegador global para autenticação nativa.
+ * Quando em modo Capacitor, o AuthContext usa isso ao invés de redirectToLogin.
+ */
+const NativeAuthNavigator = () => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isNativePlatform()) {
+      window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__ = (returnUrl) => {
+        const target = returnUrl ? `/AccessPortal?returnUrl=${encodeURIComponent(returnUrl)}` : '/AccessPortal';
+        navigate(target, { replace: true });
+      };
     }
-  }, [isAuthenticated, isLoadingAuth, navigate]);
+    return () => {
+      delete window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__;
+    };
+  }, [navigate]);
 
   return null;
 };
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated, navigateToLogin } = useAuth();
+
+  useEffect(() => {
+    if (isLoadingPublicSettings || isLoadingAuth || authError) return;
+
+    const publicEntryPaths = ['/', '/NovaReserva', '/Index', '/Inicio'];
+    if (!publicEntryPaths.includes(window.location.pathname)) return;
+
+    base44.auth.me()
+      .then((user) => {
+        if (user?.email === 'fernandotransferonline@gmail.com') {
+          window.location.replace(`/AdminDashboard${window.location.search}`);
+        }
+      })
+      .catch(() => {});
+  }, [isLoadingAuth, isLoadingPublicSettings, authError]);
 
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || isLoadingAuth) {
@@ -122,7 +120,12 @@ const AuthenticatedApp = () => {
     } else if (authError.type === 'auth_required') {
       // Redirect to login automatically
       navigateToLogin();
-      return null;
+      // Mostrar spinner enquanto redireciona, em vez de tela branca
+      return (
+        <div className="fixed inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+        </div>
+      );
     }
   }
 
@@ -145,6 +148,51 @@ const AuthenticatedApp = () => {
           }
         />
       ))}
+      <Route
+        path="/GerenciarManutencaoFrota"
+        element={
+          <LayoutWrapper currentPageName="GerenciarManutencaoFrota">
+            <GerenciarManutencaoFrota />
+          </LayoutWrapper>
+        }
+      />
+      <Route
+        path="/ClientAuditAccess"
+        element={
+          <LayoutWrapper currentPageName="ClientAuditAccess">
+            <ClientAuditAccess />
+          </LayoutWrapper>
+        }
+      />
+      <Route
+        path="/ApresentacaoClientesCorporativos"
+        element={
+          <LayoutWrapper currentPageName="ApresentacaoClientesCorporativos">
+            <AdminOnlyRoute>
+              <ApresentacaoClientesCorporativos />
+            </AdminOnlyRoute>
+          </LayoutWrapper>
+        }
+      />
+      <Route
+        path="/ApresentacaoFornecedores"
+        element={
+          <LayoutWrapper currentPageName="ApresentacaoFornecedores">
+            <AdminOnlyRoute>
+              <ApresentacaoFornecedores />
+            </AdminOnlyRoute>
+          </LayoutWrapper>
+        }
+      />
+      <Route
+        path="/Demonstracao"
+        element={
+          <LayoutWrapper currentPageName="Demonstracao">
+            <Demonstracao />
+          </LayoutWrapper>
+        }
+      />
+      <Route path="/AccessPortal" element={<AccessPortal />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
@@ -158,7 +206,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <NavigationTracker />
-          <PostLoginNavigator />
+          <NativeAuthNavigator />
           <AuthenticatedApp />
         </Router>
         <Toaster />

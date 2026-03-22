@@ -50,7 +50,6 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PassengerActionsMenu from '@/components/receptive/PassengerActionsMenu';
-import { BrowserService } from '@/native';
 
 // Sub-componente para controlar o estado local de cada card (seleção de ponto)
 function RequestCard({ request, getClientName, getReceptivityBadge, handleOpenAddPassenger, handleUpdateStatus, handlePassengerStatusUpdate, handleNotCompletedClick, updatingStatus, handlePassengerDepartureUpdate, updatingDepartureStatus }) {
@@ -233,7 +232,7 @@ function RequestCard({ request, getClientName, getReceptivityBadge, handleOpenAd
                                     src={request.receptive_sign_url}
                                     alt="Placa"
                                     className="w-full h-24 object-cover rounded border bg-white cursor-pointer"
-                                    onClick={() => BrowserService.open(request.receptive_sign_url, '_blank')}
+                                    onClick={() => window.open(request.receptive_sign_url, '_blank')}
                                 />
                             </div>
                         )}
@@ -728,13 +727,13 @@ function RequestCard({ request, getClientName, getReceptivityBadge, handleOpenAd
                         </div>
                         {request.driver_phone && (
                             <div className="flex gap-2">
-                                <Button size="sm" variant="outline" className="h-8 bg-white border-green-200 text-green-700" onClick={() => BrowserService.open(`tel:${request.driver_phone}`)}>
+                                <Button size="sm" variant="outline" className="h-8 bg-white border-green-200 text-green-700" onClick={() => window.open(`tel:${request.driver_phone}`)}>
                                     <Phone className="w-3 h-3" />
                                 </Button>
-                                <Button
-                                    size="sm"
+                                <Button 
+                                    size="sm" 
                                     className="h-8 bg-green-500 hover:bg-green-600 text-white"
-                                    onClick={() => BrowserService.open(`https://wa.me/${request.driver_phone.replace(/\D/g, '')}`, '_blank')}
+                                    onClick={() => window.open(`https://wa.me/${request.driver_phone.replace(/\D/g, '')}`, '_blank')}
                                     title="Abrir WhatsApp"
                                 >
                                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

@@ -100,6 +100,8 @@ export default function MinhasSolicitacoesFornecedor() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [isResendingRating, setIsResendingRating] = useState(false);
+  const [ratingFeedback, setRatingFeedback] = useState({ type: '', message: '' });
 
   // Estados para atribuição de motorista no aceite
   const [assignDriverNow, setAssignDriverNow] = useState(false);
@@ -139,7 +141,7 @@ export default function MinhasSolicitacoesFornecedor() {
 
   // Estados para ordenação
   const [sortColumn, setSortColumn] = useState('date_time');
-  const [sortDirection, setSortDirection] = useState('asc');
+  const [sortDirection, setSortDirection] = useState('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -271,7 +273,7 @@ export default function MinhasSolicitacoesFornecedor() {
         }
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FMinhasSolicitacoesFornecedor';
       }
     };
 
@@ -422,15 +424,30 @@ export default function MinhasSolicitacoesFornecedor() {
     // Mas mantemos SRs que são legitimamente corporativas ou não têm booking vinculado
     const validServiceRequests = serviceRequests.filter(r => !r.converted_booking_id);
 
-    const platformTrips = validServiceRequests.map(r => ({
-      ...r,
-      type: 'platform',
-      unified_status: r.supplier_response_status,
-      display_id: r.request_number,
-      client_name_display: clients.find(c => c.id === r.client_id)?.name || 'Cliente Plataforma',
-      value_display: (!r.client_id && r.chosen_client_price) ? (r.final_client_price_with_additions || r.chosen_client_price) : r.chosen_supplier_cost,
-      is_own: false
-    }));
+    const platformTrips = validServiceRequests.map(r => {
+      let computedStatus = r.supplier_response_status;
+
+      if (r.status === 'concluida') {
+        computedStatus = 'concluida';
+      } else if (r.status === 'cancelada') {
+        computedStatus = 'cancelada';
+      } else if (
+        r.status === 'em_andamento' ||
+        ['a_caminho', 'chegou_origem', 'passageiro_embarcou', 'parada_adicional', 'a_caminho_destino', 'chegou_destino', 'aguardando_confirmacao_despesas'].includes(r.driver_trip_status)
+      ) {
+        computedStatus = 'em_andamento';
+      }
+
+      return {
+        ...r,
+        type: 'platform',
+        unified_status: computedStatus,
+        display_id: r.request_number,
+        client_name_display: clients.find(c => c.id === r.client_id)?.name || 'Cliente Plataforma',
+        value_display: (!r.client_id && r.chosen_client_price) ? (r.final_client_price_with_additions || r.chosen_client_price) : r.chosen_supplier_cost,
+        is_own: false
+      };
+    });
 
     const ownTripsFormatted = ownBookings.map(b => {
       let computedStatus = b.status;
@@ -625,6 +642,9 @@ export default function MinhasSolicitacoesFornecedor() {
       let valA, valB;
       switch (sortColumn) {
         case 'request_number': valA = a.request_number || ''; valB = b.request_number || ''; break;
+        case 'passenger_name': valA = a.passenger_name || ''; valB = b.passenger_name || ''; break;
+        case 'client_name_display': valA = a.client_name_display || ''; valB = b.client_name_display || ''; break;
+        case 'trip_type': valA = a.type || ''; valB = b.type || ''; break;
         case 'date_time': valA = `${a.date || '9999-12-31'} ${a.time || '23:59'}`; valB = `${b.date || '9999-12-31'} ${b.time || '23:59'}`; break;
         case 'origin': valA = a.origin || ''; valB = b.origin || ''; break;
         case 'passengers': valA = a.passengers || 0; valB = b.passengers || 0; break;
@@ -929,7 +949,11 @@ export default function MinhasSolicitacoesFornecedor() {
       } catch (err) { setError(err.message); } finally { setIsSubmittingSubcontract(false); }
   };
 
-  const handleViewDetails = (request) => { setSelectedRequest(request); setShowDetailsDialog(true); };
+  const handleViewDetails = (request) => {
+    setSelectedRequest(request);
+    setRatingFeedback({ type: '', message: '' });
+    setShowDetailsDialog(true);
+  };
 
   const handleEditTrip = (request) => {
       setShowDetailsDialog(false);
@@ -983,6 +1007,27 @@ export default function MinhasSolicitacoesFornecedor() {
           alert('Erro ao enviar mensagem: ' + e.message);
       }
   };
+
+  const handleResendRating = async (request) => {
+      setIsResendingRating(true);
+      setRatingFeedback({ type: '', message: '' });
+      try {
+          const response = await base44.functions.invoke('generateAndSendRatingLink', {
+              serviceRequestId: request.id,
+              language: request.driver_language || 'pt'
+          });
+          if (response?.data?.success) {
+              setRatingFeedback({ type: 'success', message: 'Pesquisa reenviada com sucesso!' });
+          } else {
+              setRatingFeedback({ type: 'error', message: response?.data?.error || 'Erro ao reenviar pesquisa.' });
+          }
+      } catch (e) {
+          setRatingFeedback({ type: 'error', message: e.message || 'Erro ao reenviar pesquisa.' });
+      } finally {
+          setIsResendingRating(false);
+      }
+  };
+
   const handleSort = (col) => { setSortColumn(col); setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc'); };
 
   if (isCheckingAuth) return <SectionLoader />;
@@ -1313,6 +1358,15 @@ export default function MinhasSolicitacoesFornecedor() {
                             isEditable={true} 
                             onOpenStatusChangeDialog={handleOpenStatusChangeDialog}
                         />
+
+                        {ratingFeedback.message && (
+                            <Alert className={ratingFeedback.type === 'error' ? 'border-red-200 bg-red-50' : 'border-green-200 bg-green-50'}>
+                                <AlertDescription className={ratingFeedback.type === 'error' ? 'text-red-700' : 'text-green-700'}>
+                                    {ratingFeedback.message}
+                                </AlertDescription>
+                            </Alert>
+                        )}
+
                         <DialogFooter className="flex-col sm:flex-row gap-2">
                             <div className="flex gap-2 w-full sm:w-auto">
                                 <Button variant="outline" onClick={() => setShowDetailsDialog(false)} className="flex-1 sm:flex-none">Fechar</Button>
@@ -1334,6 +1388,18 @@ export default function MinhasSolicitacoesFornecedor() {
                                     <Printer className="w-4 h-4 mr-2" />
                                     Imprimir OS
                                 </Button>
+
+                                {['concluida'].includes(selectedRequest.unified_status || selectedRequest.status) && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => handleResendRating(selectedRequest)}
+                                        disabled={isResendingRating}
+                                        className="flex-1 sm:flex-none"
+                                    >
+                                        {isResendingRating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                                        Reenviar Pesquisa
+                                    </Button>
+                                )}
 
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>

@@ -24,23 +24,44 @@ export default function BookingSuccessGuest() {
       return;
     }
 
-    const verifyPayment = async () => {
-      try {
-        const response = await base44.functions.invoke('handleGuestStripeCheckoutSuccess', {
-          session_id: sessionId
-        });
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        if (response.data.success) {
-          setBookingDetails(response.data.booking);
-          setStatus('success');
-        } else {
+    const verifyPayment = async () => {
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          const response = await base44.functions.invoke('handleGuestStripeCheckoutSuccess', {
+            session_id: sessionId
+          });
+
+          const result = response?.data || response;
+
+          if (result?.success) {
+            setBookingDetails(result.booking);
+            setStatus('success');
+            return;
+          }
+
+          if (result?.payment_status && result.payment_status !== 'paid' && attempt < 3) {
+            await wait(2000);
+            continue;
+          }
+
           setStatus('error');
-          setErrorMessage(response.data.error || 'Erro ao confirmar pagamento.');
+          setErrorMessage(result?.error || 'Erro ao confirmar pagamento.');
+          return;
+        } catch (error) {
+          const backendError = error?.response?.data?.error || error?.message || 'Erro de conexão ao verificar pagamento.';
+
+          if (attempt < 3) {
+            await wait(1500);
+            continue;
+          }
+
+          console.error('Erro ao verificar pagamento:', error);
+          setStatus('error');
+          setErrorMessage(backendError);
+          return;
         }
-      } catch (error) {
-        console.error('Erro ao verificar pagamento:', error);
-        setStatus('error');
-        setErrorMessage('Erro de conexão ao verificar pagamento.');
       }
     };
 

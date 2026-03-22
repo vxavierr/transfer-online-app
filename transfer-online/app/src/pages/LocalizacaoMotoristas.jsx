@@ -60,7 +60,7 @@ export default function LocalizacaoMotoristas() {
         setIsAuthChecking(false);
       } catch (error) {
         console.error('Erro auth:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FLocalizacaoMotoristas';
       }
     };
     checkAuth();

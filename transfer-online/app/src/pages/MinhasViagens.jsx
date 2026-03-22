@@ -20,7 +20,7 @@ export default function MinhasViagens() {
         setUser(currentUser);
       } catch (error) {
         console.error('Erro ao carregar usuário:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FMinhasViagens';
       }
     };
     loadUser();

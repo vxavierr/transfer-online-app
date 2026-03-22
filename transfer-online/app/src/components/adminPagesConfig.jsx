@@ -93,9 +93,17 @@ export const ADMIN_MENU_STRUCTURE = [
     ]
   },
   {
+    group: 'Apresentações',
+    items: [
+      { id: 'ApresentacaoClientesCorporativos', name: 'Apresentação Clientes Corporativos', icon: Building2 },
+      { id: 'ApresentacaoFornecedores', name: 'Apresentação Fornecedores', icon: Briefcase },
+    ]
+  },
+  {
     group: 'Configurações',
     items: [
       { id: 'Configuracoes', name: 'Configurações do Sistema', icon: Settings },
+      { id: 'ManualArquitetonico', name: 'Manual do Usuário', icon: FileText },
       { id: 'SmsLogs', name: 'Logs de SMS (Zenvia)', icon: MessageSquare },
       { id: 'GerenciarTemas', name: 'Temas Sazonais', icon: Palette },
       { id: 'GerenciarNotificacoes', name: 'Templates de Notificação', icon: Bell },

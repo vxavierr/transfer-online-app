@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { GeoService, BrowserService } from '@/native';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -368,7 +367,7 @@ export default function DetalhesViagemMotorista() {
     const message = encodeURIComponent(
       `🚗 *Acompanhe sua viagem em tempo real!*\n\nViagem ${serviceRequest.request_number}\n\n${sharedTimelineUrl}`
     );
-    BrowserService.open(`https://wa.me/?text=${message}`, '_blank');
+    window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   const handleAddToGoogleCalendar = async () => {
@@ -382,7 +381,7 @@ export default function DetalhesViagemMotorista() {
       });
 
       if (response.data.success) {
-        BrowserService.open(response.data.calendarUrl, '_blank');
+        window.open(response.data.calendarUrl, '_blank');
         setSuccess('✅ Abrindo Google Agenda...');
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -396,32 +395,38 @@ export default function DetalhesViagemMotorista() {
   };
 
   const requestGPSPermission = async () => {
-    if (!GeoService.isAvailable()) {
+    if (!navigator.geolocation) {
       setError('Seu dispositivo não suporta geolocalização');
       setShowGpsAlert(true);
       return false;
     }
 
-    try {
-      await GeoService.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 5000,
-      });
-      setGpsPermissionGranted(true);
-      setGpsPermissionDenied(false);
-      setShowGpsAlert(false);
-      localStorage.setItem('gps_permission_granted', 'true');
-      setSuccess('✅ Permissão de GPS concedida! Rastreamento iniciado.');
-      setTimeout(() => setSuccess(''), 3000);
-      return true;
-    } catch (err) {
-      console.error('[GPS] Erro ao solicitar permissão:', err);
-      setGpsPermissionGranted(false);
-      setGpsPermissionDenied(true);
-      setShowGpsAlert(true);
-      localStorage.setItem('gps_permission_granted', 'false');
-      return false;
-    }
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          setGpsPermissionGranted(true);
+          setGpsPermissionDenied(false);
+          setShowGpsAlert(false);
+          localStorage.setItem('gps_permission_granted', 'true');
+          setSuccess('✅ Permissão de GPS concedida! Rastreamento iniciado.');
+          setTimeout(() => setSuccess(''), 3000);
+          resolve(true);
+        },
+        (err) => {
+          console.error('[GPS] Erro ao solicitar permissão:', err);
+          setGpsPermissionGranted(false);
+          setGpsPermissionDenied(true);
+          setShowGpsAlert(true);
+          localStorage.setItem('gps_permission_granted', 'false');
+          resolve(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 10000
+        }
+      );
+    });
   };
 
 
@@ -481,10 +486,13 @@ export default function DetalhesViagemMotorista() {
   let currentLon = null;
 
   try {
-    if (GeoService.isAvailable()) {
-      const position = await GeoService.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 5000,
+    if (navigator.geolocation) {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        });
       });
       currentLat = position.coords.latitude;
       currentLon = position.coords.longitude;
@@ -565,10 +573,13 @@ export default function DetalhesViagemMotorista() {
     let currentLon = null;
 
     try {
-      if (GeoService.isAvailable()) {
-        const position = await GeoService.getCurrentPosition({
-          enableHighAccuracy: true,
-          timeout: 5000,
+      if (navigator.geolocation) {
+        const position = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+          });
         });
         currentLat = position.coords.latitude;
         currentLon = position.coords.longitude;
@@ -764,7 +775,7 @@ export default function DetalhesViagemMotorista() {
           : 'Viagem finalizada com sucesso!');
         
         if (watchId) {
-          GeoService.clearWatch(watchId);
+          navigator.geolocation.clearWatch(watchId);
           setWatchId(null);
         }
         setAutoDetectionEnabled(false);
@@ -783,70 +794,76 @@ export default function DetalhesViagemMotorista() {
     }
   };
 
-  const startContinuousTracking = async () => {
-    if (!GeoService.isAvailable()) {
+  const startContinuousTracking = () => {
+    if (!navigator.geolocation) {
       setError('Seu dispositivo não suporta geolocalização');
       setShowGpsAlert(true);
       return;
     }
 
     // Tentar obter localização inicial primeiro (mais tolerante)
-    GeoService.getCurrentPosition({
-      enableHighAccuracy: true,
-      timeout: 15000,
-    }).then((position) => {
-      console.log('[GPS] Localização inicial obtida com sucesso');
-      updateLocationState(position);
-    }).catch((error) => {
-      console.warn('[GPS] Erro na localização inicial:', error.message);
-      // Continuar mesmo sem sucesso inicial
-    });
-
-    // Usar background tracking para motoristas — mantém GPS mesmo com app minimizado
-    const id = await GeoService.startBackgroundTracking(
-      async (position) => {
-        await updateLocationState(position);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log('[GPS] Localização inicial obtida com sucesso');
+        // Atualizar imediatamente
+        updateLocationState(position);
+      },
+      (error) => {
+        console.warn('[GPS] Erro na localização inicial:', error.message);
+        // Continuar mesmo sem sucesso inicial
       },
       {
         enableHighAccuracy: true,
         timeout: 15000,
-        backgroundMessage: 'Rastreamento de viagem ativo',
-        backgroundTitle: 'TransferOnline',
-        distanceFilter: 10,
+        maximumAge: 30000 // Aceitar cache recente para primeira leitura
       }
-    ).catch(async (err) => {
-      console.error('[GPS] Erro ao rastrear localização:', err);
+    );
 
-      // Não desistir imediatamente - pode ser timeout temporário
-      if (err.code === 3) { // TIMEOUT
-        console.warn('[GPS] Timeout - tentando novamente...');
-        return null;
+    const id = navigator.geolocation.watchPosition(
+      async (position) => {
+        await updateLocationState(position);
+      },
+      async (err) => {
+        console.error('[GPS] Erro ao rastrear localização:', err);
+        
+        // Não desistir imediatamente - pode ser timeout temporário
+        if (err.code === 3) { // TIMEOUT
+          console.warn('[GPS] Timeout - tentando novamente...');
+          return; // Continuar tentando
+        }
+        
+        // Permissão negada ou erro de localização
+        setGpsPermissionGranted(false);
+        setGpsPermissionDenied(true);
+        setShowGpsAlert(true);
+        localStorage.setItem('gps_permission_granted', 'false');
+        
+        // Notificar backend que GPS está desabilitado (para alertar admin)
+        try {
+          await base44.functions.invoke('updateDriverLocation', {
+            serviceRequestId: serviceRequest.id,
+            token,
+            latitude: null,
+            longitude: null,
+            gpsDisabled: true
+          });
+        } catch (notifyErr) {
+          console.error('[GPS] Erro ao notificar backend:', notifyErr);
+        }
+        
+        if (watchId) {
+          navigator.geolocation.clearWatch(watchId);
+          setWatchId(null);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000
       }
+    );
 
-      // Permissão negada ou erro de localização
-      setGpsPermissionGranted(false);
-      setGpsPermissionDenied(true);
-      setShowGpsAlert(true);
-      localStorage.setItem('gps_permission_granted', 'false');
-
-      // Notificar backend que GPS está desabilitado (para alertar admin)
-      try {
-        await base44.functions.invoke('updateDriverLocation', {
-          serviceRequestId: serviceRequest.id,
-          token,
-          latitude: null,
-          longitude: null,
-          gpsDisabled: true
-        });
-      } catch (notifyErr) {
-        console.error('[GPS] Erro ao notificar backend:', notifyErr);
-      }
-      return null;
-    });
-
-    if (id !== null && id !== undefined) {
-      setWatchId(id);
-    }
+    setWatchId(id);
   };
 
   const updateLocationState = async (position) => {
@@ -922,7 +939,7 @@ export default function DetalhesViagemMotorista() {
 
   const stopContinuousTracking = () => {
     if (watchId) {
-      GeoService.stopBackgroundTracking(watchId);
+      navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
     }
     setAutoDetectionEnabled(false);
@@ -955,7 +972,7 @@ export default function DetalhesViagemMotorista() {
 
     return () => {
       if (watchId) {
-        GeoService.stopBackgroundTracking(watchId);
+        navigator.geolocation.clearWatch(watchId);
       }
     };
   }, [serviceRequest?.driver_trip_status, serviceRequest?.gps_tracking_enabled, gpsPermissionGranted]);
@@ -1052,11 +1069,11 @@ export default function DetalhesViagemMotorista() {
         } else {
           url = `https://waze.com/ul?q=${encodeURIComponent(destination)}&navigate=yes`;
         }
-        BrowserService.open(url, '_blank');
+        window.open(url, '_blank');
       }
     } else if (preferredMap === 'google_maps') {
       const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
-      BrowserService.open(url, '_blank');
+      window.open(url, '_blank');
     } else {
       // Internal Map
       setPendingNavigationDestination(destination);
@@ -1362,7 +1379,7 @@ export default function DetalhesViagemMotorista() {
 
                 {(serviceRequest.receptive_performed_by === 'driver' || serviceRequest.receptive_performed_by === 'contracted_company') && serviceRequest.receptive_sign_url && (
                   <Button
-                    onClick={() => BrowserService.open(serviceRequest.receptive_sign_url, '_blank')}
+                    onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
                     size="sm"
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
                   >
@@ -1612,7 +1629,7 @@ export default function DetalhesViagemMotorista() {
                   />
                 </div>
                 <Button
-                  onClick={() => BrowserService.open(serviceRequest.receptive_sign_url, '_blank')}
+                  onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 text-base font-semibold"
                 >
                   <ExternalLink className="w-5 h-5 mr-2" />

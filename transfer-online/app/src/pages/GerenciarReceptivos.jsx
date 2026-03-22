@@ -41,7 +41,6 @@ import {
 import { format, parseISO, isWithinInterval, startOfDay, endOfDay, subDays, addDays } from 'date-fns';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { ptBR } from 'date-fns/locale';
-import { BrowserService } from '@/native';
 
 export default function GerenciarReceptivos() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -84,7 +83,7 @@ export default function GerenciarReceptivos() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarReceptivos';
       }
     };
 
@@ -354,7 +353,7 @@ function ReceptiveGeneratorTab({ user, supplier }) {
       `Acesse a lista completa:\n${generatedLink}\n\n` +
       `⏰ Link válido por 24h após o último transfer`
     );
-    BrowserService.open(`https://wa.me/?text=${message}`, '_blank');
+    window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   const handleShareEmail = async () => {
@@ -1145,7 +1144,7 @@ function SharedListItem({ list, onToggleActive, onUpdateValidity }) {
      const baseUrl = window.location.origin;
      const url = `${baseUrl}/ReceptiveListStatus?token=${list.token}`;
      const message = encodeURIComponent(`Acesse a lista de receptivos: ${url}`);
-     BrowserService.open(`https://wa.me/?text=${message}`, '_blank');
+     window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   return (

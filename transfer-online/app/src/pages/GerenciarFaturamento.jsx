@@ -32,22 +32,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import {
   Loader2, Receipt, CheckCircle, AlertCircle, FileText, DollarSign, Eye,
-  Plus, Trash2, Edit, ParkingCircle, Timer, Filter, X, Users, Building2,
-  Calendar, Mail, ChevronDown, ChevronRight
+  Plus, Edit, ParkingCircle, Timer, Users, Building2,
+  Calendar, Mail
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import WhatsAppShareButton from '@/components/billing/WhatsAppShareButton';
 import ReviewDialog from '@/components/billing/ReviewDialog';
 import BillableTripsSection from '@/components/billing/BillableTripsSection';
+import ManualInvoiceDialog from '@/components/billing/ManualInvoiceDialog';
 
 export default function GerenciarFaturamento() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -74,7 +68,7 @@ export default function GerenciarFaturamento() {
     period_end: '',
     external_reviewer_email: ''
   });
-  const [sendOption, setSendOption] = useState(''); // 'email' or 'download'
+  const [sendOption, setSendOption] = useState('');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -92,8 +86,20 @@ export default function GerenciarFaturamento() {
     bank_account_details: '',
     nf_number: ''
   });
+  const [showManualInvoiceDialog, setShowManualInvoiceDialog] = useState(false);
+  const [manualInvoiceData, setManualInvoiceData] = useState({
+    manual_client_name: '',
+    manual_client_document: '',
+    manual_client_email: '',
+    manual_description: '',
+    total_amount: '',
+    due_date: '',
+    payment_method_description: '',
+    bank_account_details: '',
+    nf_number: '',
+    receipt_number: ''
+  });
 
-  // Estados de Filtros
   const [filters, setFilters] = useState({
     client_id: 'all',
     user_id: 'all',
@@ -125,10 +131,6 @@ export default function GerenciarFaturamento() {
 
   const queryClient = useQueryClient();
 
-
-
-
-
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -154,9 +156,9 @@ export default function GerenciarFaturamento() {
 
         setSupplier(supplierData);
         setIsCheckingAuth(false);
-      } catch (error) {
-        console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+      } catch (authError) {
+        console.error('Erro ao verificar autenticação:', authError);
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarFaturamento';
       }
     };
 
@@ -181,15 +183,13 @@ export default function GerenciarFaturamento() {
     queryKey: ['billableRequests', user?.supplier_id],
     queryFn: async () => {
       if (!user?.supplier_id) return [];
-      
-      // 1. Buscar ServiceRequests (Corporativo Plataforma)
+
       const requests = await base44.entities.ServiceRequest.filter({
         chosen_supplier_id: user.supplier_id,
         supplier_billing_status: 'pendente_faturamento',
         status: 'concluida'
       });
 
-      // 2. Buscar SupplierOwnBookings (Clientes Próprios)
       let ownBookings = [];
       try {
         ownBookings = await base44.entities.SupplierOwnBooking.filter({
@@ -201,7 +201,6 @@ export default function GerenciarFaturamento() {
         console.warn('Erro ao buscar viagens próprias faturáveis:', e);
       }
 
-      // Normalizar dados para interface unificada
       const normalizedRequests = requests.map(r => ({ ...r, type: 'ServiceRequest', origin_type: 'corporate' }));
       const normalizedOwnBookings = ownBookings.map(b => ({
         ...b,
@@ -225,7 +224,7 @@ export default function GerenciarFaturamento() {
     queryKey: ['clients', user?.supplier_id],
     queryFn: async () => {
       const platformClients = await base44.entities.Client.list();
-      
+
       let ownClients = [];
       if (user?.supplier_id) {
         try {
@@ -237,7 +236,6 @@ export default function GerenciarFaturamento() {
         }
       }
 
-      // Unificar listas
       return [
         ...platformClients.map(c => ({ ...c, type: 'corporate', origin: 'Plataforma' })),
         ...ownClients.map(c => ({ ...c, type: 'own', origin: 'Próprio' }))
@@ -250,18 +248,10 @@ export default function GerenciarFaturamento() {
     queryKey: ['allUsers'],
     queryFn: async () => {
       try {
-        console.log('🔍 [users] Chamando função backend listAllUsers...');
         const response = await base44.functions.invoke('listAllUsers');
-        const allUsers = response.data.users || [];
-        console.log('✅ [users] Usuários carregados:', allUsers.length);
-        console.log('✅ [users] Primeiros 3 usuários:', allUsers.slice(0, 3).map(u => ({
-          id: u.id,
-          full_name: u.full_name,
-          email: u.email
-        })));
-        return allUsers;
-      } catch (error) {
-        console.error('❌ [users] Erro ao carregar usuários:', error);
+        return response.data.users || [];
+      } catch (listError) {
+        console.error('Erro ao carregar usuários:', listError);
         return [];
       }
     },
@@ -320,17 +310,45 @@ export default function GerenciarFaturamento() {
       setInvoiceData({ period_start: '', period_end: '', external_reviewer_email: '' });
       setTimeout(() => setSuccess(''), 5000);
     },
-    onError: (error) => {
-      setError(error.message || 'Erro ao criar fatura');
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao criar fatura');
+    }
+  });
+
+  const createManualInvoiceMutation = useMutation({
+    mutationFn: async (data) => {
+      const response = await base44.functions.invoke('createManualSupplierInvoice', data);
+      return response.data;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['supplierInvoices'] });
+      setSuccess(`Fatura manual #${result.invoice.invoice_number} criada com sucesso!`);
+      setShowManualInvoiceDialog(false);
+      setManualInvoiceData({
+        manual_client_name: '',
+        manual_client_document: '',
+        manual_client_email: '',
+        manual_description: '',
+        total_amount: '',
+        due_date: '',
+        payment_method_description: '',
+        bank_account_details: '',
+        nf_number: '',
+        receipt_number: ''
+      });
+      setTimeout(() => setSuccess(''), 5000);
+    },
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao criar fatura manual');
     }
   });
 
   const approveReviewMutation = useMutation({
-    mutationFn: async ({ requestId, approvedExpenses, reviewNotes }) => {
+    mutationFn: async ({ requestId, approvedExpenses: approved, reviewNotes: notes }) => {
       const response = await base44.functions.invoke('approveServiceRequestExpenses', {
         serviceRequestId: requestId,
-        approvedExpenses,
-        reviewNotes
+        approvedExpenses: approved,
+        reviewNotes: notes
       });
       return response.data;
     },
@@ -345,8 +363,8 @@ export default function GerenciarFaturamento() {
       setReviewNotes('');
       setTimeout(() => setSuccess(''), 5000);
     },
-    onError: (error) => {
-      setReviewError(error.message || 'Erro ao aprovar revisão');
+    onError: (mutationError) => {
+      setReviewError(mutationError.message || 'Erro ao aprovar revisão');
     }
   });
 
@@ -363,11 +381,10 @@ export default function GerenciarFaturamento() {
       queryClient.invalidateQueries({ queryKey: ['supplierInvoices'] });
       setSuccess('Fatura aprovada! Agora preencha os dados de cobrança.');
       setTimeout(() => setSuccess(''), 3000);
-      // Abrir dialog para completar dados da fatura
       handleOpenCompleteInvoice(invoice);
     },
-    onError: (error) => {
-      setError(error.message || 'Erro ao aprovar fatura');
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao aprovar fatura');
     }
   });
 
@@ -392,8 +409,8 @@ export default function GerenciarFaturamento() {
       });
       setTimeout(() => setSuccess(''), 5000);
     },
-    onError: (error) => {
-      setError(error.message || 'Erro ao salvar dados de cobrança');
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao salvar dados de cobrança');
     }
   });
 
@@ -406,7 +423,6 @@ export default function GerenciarFaturamento() {
         finance_status: data.is_full_payment ? 'paid_full' : 'paid_partial',
       };
 
-      // Se for pagamento total, atualiza status geral também
       if (data.is_full_payment) {
         updateData.status = 'paga';
       }
@@ -420,8 +436,8 @@ export default function GerenciarFaturamento() {
       setPaymentInvoice(null);
       setTimeout(() => setSuccess(''), 5000);
     },
-    onError: (error) => {
-      setError(error.message || 'Erro ao registrar pagamento');
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao registrar pagamento');
     }
   });
 
@@ -438,23 +454,25 @@ export default function GerenciarFaturamento() {
       setEditingBooking(null);
       setTimeout(() => setSuccess(''), 3000);
     },
-    onError: (error) => {
-      setError(error.message || 'Erro ao atualizar valor');
+    onError: (mutationError) => {
+      setError(mutationError.message || 'Erro ao atualizar valor');
     }
   });
 
-  // Filtrar faturas
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
       if (invoiceFilters.finance_status !== 'all' && inv.finance_status !== invoiceFilters.finance_status) return false;
       if (!inv.finance_status && invoiceFilters.finance_status === 'pending') {
-         // Se não tiver status financeiro definido (legado), considera pendente se status geral não for paga
-         if (inv.status === 'paga') return false;
+        if (inv.status === 'paga') return false;
       }
-      
-      if (invoiceFilters.start && new Date(inv.created_date) < new Date(invoiceFilters.start)) return false;
-      if (invoiceFilters.end && new Date(inv.created_date) > new Date(invoiceFilters.end + 'T23:59:59')) return false;
-      
+
+      if (invoiceFilters.start && new Date(inv.created_date) < parseDateOnly(invoiceFilters.start)) return false;
+      if (invoiceFilters.end) {
+        const endDate = parseDateOnly(invoiceFilters.end);
+        endDate.setHours(23, 59, 59, 999);
+        if (new Date(inv.created_date) > endDate) return false;
+      }
+
       return true;
     });
   }, [invoices, invoiceFilters]);
@@ -464,7 +482,7 @@ export default function GerenciarFaturamento() {
       const total = inv.total_amount || 0;
       const paid = inv.paid_amount || 0;
       const pending = total - paid;
-      
+
       return {
         total: acc.total + total,
         paid: acc.paid + paid,
@@ -525,9 +543,7 @@ export default function GerenciarFaturamento() {
   };
 
   const calculateApprovedExpensesTotal = () => {
-    return approvedExpenses.reduce((total, expense) => {
-      return total + (parseFloat(expense.value) || 0);
-    }, 0);
+    return approvedExpenses.reduce((total, expense) => total + (parseFloat(expense.value) || 0), 0);
   };
 
   const handleApproveReview = async () => {
@@ -561,6 +577,37 @@ export default function GerenciarFaturamento() {
     setShowInvoiceDialog(true);
   };
 
+  const handleCreateManualInvoice = () => {
+    setError('');
+
+    if (!manualInvoiceData.manual_client_name.trim()) {
+      setError('Informe o cliente da fatura manual.');
+      return;
+    }
+
+    if (!manualInvoiceData.manual_description.trim()) {
+      setError('Informe a descrição da fatura manual.');
+      return;
+    }
+
+    if (!manualInvoiceData.total_amount || parseFloat(manualInvoiceData.total_amount) <= 0) {
+      setError('Informe um valor total válido para a fatura manual.');
+      return;
+    }
+
+    if (!manualInvoiceData.due_date) {
+      setError('Informe a data de vencimento da fatura manual.');
+      return;
+    }
+
+    if (!manualInvoiceData.payment_method_description) {
+      setError('Informe a forma de recebimento da fatura manual.');
+      return;
+    }
+
+    createManualInvoiceMutation.mutate(manualInvoiceData);
+  };
+
   const handlePreviewPDF = async () => {
     setError('');
 
@@ -569,7 +616,7 @@ export default function GerenciarFaturamento() {
       return;
     }
 
-    if (new Date(invoiceData.period_start) > new Date(invoiceData.period_end)) {
+    if (parseDateOnly(invoiceData.period_start) > parseDateOnly(invoiceData.period_end)) {
       setError('A data de início não pode ser depois da data de fim.');
       return;
     }
@@ -578,12 +625,12 @@ export default function GerenciarFaturamento() {
 
     try {
       const groupingTypeMap = {
-        'none': 'none',
-        'client': 'client',
-        'billing_responsible': 'billing_responsible',
-        'month': 'month',
-        'cost_center': 'cost_center',
-        'billing_method': 'billing_method'
+        none: 'none',
+        client: 'client',
+        billing_responsible: 'billing_responsible',
+        month: 'month',
+        cost_center: 'cost_center',
+        billing_method: 'billing_method'
       };
 
       const response = await base44.functions.invoke('generateSupplierInvoicePDF', {
@@ -599,9 +646,9 @@ export default function GerenciarFaturamento() {
       const url = window.URL.createObjectURL(blob);
       setPreviewPdfUrl(url);
       setShowPreviewDialog(true);
-    } catch (error) {
-      console.error('Erro ao gerar prévia:', error);
-      setError(error.message || 'Erro ao gerar prévia do relatório');
+    } catch (previewError) {
+      console.error('Erro ao gerar prévia:', previewError);
+      setError(previewError.message || 'Erro ao gerar prévia do relatório');
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -615,7 +662,7 @@ export default function GerenciarFaturamento() {
       return;
     }
 
-    if (new Date(invoiceData.period_start) > new Date(invoiceData.period_end)) {
+    if (parseDateOnly(invoiceData.period_start) > parseDateOnly(invoiceData.period_end)) {
       setError('A data de início não pode ser depois da data de fim.');
       return;
     }
@@ -630,12 +677,8 @@ export default function GerenciarFaturamento() {
     setIsGeneratingPDF(true);
 
     try {
-      // 1. Criar a Fatura (SupplierInvoice) e atualizar status das viagens
-      // Isso remove as viagens da lista de pendentes
-      console.log('Criando fatura...');
-      // Se for download (sem email externo), usa o email do fornecedor/usuário atual como "revisor" interno
       const reviewerEmail = sendOption === 'email' ? invoiceData.external_reviewer_email : (user?.email || 'interno@sistema.com');
-      
+
       const invoiceResult = await createInvoiceMutation.mutateAsync({
         supplier_id: supplier.id,
         service_request_ids: selectedRequests,
@@ -645,43 +688,38 @@ export default function GerenciarFaturamento() {
       });
 
       if (!invoiceResult || !invoiceResult.invoice) {
-        throw new Error("Falha ao registrar a fatura no sistema.");
+        throw new Error('Falha ao registrar a fatura no sistema.');
       }
-      
-      console.log('Fatura criada:', invoiceResult.invoice.id);
 
-      // 2. Gerar o PDF
-      console.log('Gerando PDF...');
       const groupingTypeMap = {
-        'none': 'none',
-        'client': 'client',
-        'billing_responsible': 'billing_responsible',
-        'month': 'month',
-        'cost_center': 'cost_center',
-        'billing_method': 'billing_method'
+        none: 'none',
+        client: 'client',
+        billing_responsible: 'billing_responsible',
+        month: 'month',
+        cost_center: 'cost_center',
+        billing_method: 'billing_method'
       };
 
       const response = await base44.functions.invoke('generateSupplierInvoicePDF', {
+        invoiceId: invoiceResult.invoice.id,
         serviceRequestIds: selectedRequests,
         groupingType: groupingTypeMap[groupBy] || 'none',
         recipientEmail: sendOption === 'email' ? invoiceData.external_reviewer_email : null,
         sendEmail: sendOption === 'email',
         period_start: invoiceData.period_start,
         period_end: invoiceData.period_end,
-        invoiceNumber: invoiceResult.invoice.invoice_number // Passar o número gerado
+        invoiceNumber: invoiceResult.invoice.invoice_number
       });
 
       if (sendOption === 'email') {
-        // Email foi enviado
         if (response.data.success) {
-          // Salvar URL do PDF na fatura se disponível
           if (response.data.pdfUrl) {
             try {
               await base44.entities.SupplierInvoice.update(invoiceResult.invoice.id, {
                 invoice_document_url: response.data.pdfUrl
               });
-            } catch (err) {
-              console.error('Erro ao salvar URL do PDF na fatura (email):', err);
+            } catch (updateError) {
+              console.error('Erro ao salvar URL do PDF na fatura (email):', updateError);
             }
           }
 
@@ -695,10 +733,8 @@ export default function GerenciarFaturamento() {
           throw new Error(response.data.error || 'Erro ao enviar relatório');
         }
       } else {
-        // Download do PDF
         const blob = new Blob([response.data], { type: 'application/pdf' });
 
-        // Upload silencioso para persistir a URL na fatura
         try {
           const file = new File([blob], `Fatura_${invoiceResult.invoice.invoice_number}.pdf`, { type: 'application/pdf' });
           const uploadRes = await base44.integrations.Core.UploadFile({ file });
@@ -708,8 +744,8 @@ export default function GerenciarFaturamento() {
               invoice_document_url: uploadRes.file_url
             });
           }
-        } catch (err) {
-          console.error('Erro ao fazer upload/salvar PDF da fatura (download):', err);
+        } catch (uploadError) {
+          console.error('Erro ao fazer upload/salvar PDF da fatura (download):', uploadError);
         }
 
         const url = window.URL.createObjectURL(blob);
@@ -728,50 +764,17 @@ export default function GerenciarFaturamento() {
         setSendOption('');
         setTimeout(() => setSuccess(''), 5000);
       }
-      
-      // Atualizar listas para remover os itens faturados
+
       queryClient.invalidateQueries({ queryKey: ['billableRequests'] });
       queryClient.invalidateQueries({ queryKey: ['supplierInvoices'] });
       queryClient.invalidateQueries({ queryKey: ['allSupplierServiceRequests'] });
-
-    } catch (error) {
-      console.error('Erro ao processar fatura/PDF:', error);
-      setError(error.message || 'Erro ao processar fatura e relatório');
+    } catch (generateError) {
+      console.error('Erro ao processar fatura/PDF:', generateError);
+      setError(generateError.message || 'Erro ao processar fatura e relatório');
     } finally {
       setIsGeneratingPDF(false);
     }
   };
-
-  const handleSubmitInvoice = async () => {
-    setError('');
-
-    if (!invoiceData.period_start || !invoiceData.period_end) {
-      setError('Preencha o período de início e fim da fatura.');
-      return;
-    }
-
-    if (new Date(invoiceData.period_start) > new Date(invoiceData.period_end)) {
-      setError('A data de início não pode ser depois da data de fim.');
-      return;
-    }
-
-    if (!invoiceData.external_reviewer_email || !/\S+@\S+\.\S+/.test(invoiceData.external_reviewer_email)) {
-      setError('Informe um e-mail válido para o revisor externo.');
-      return;
-    }
-
-    createInvoiceMutation.mutate({
-      supplier_id: supplier.id,
-      service_request_ids: selectedRequests,
-      period_start: invoiceData.period_start,
-      period_end: invoiceData.period_end,
-      external_reviewer_email: invoiceData.external_reviewer_email
-    });
-  };
-
-
-
-
 
   const handleViewInvoiceDetails = (invoice) => {
     setSelectedInvoiceForDetails(invoice);
@@ -833,41 +836,37 @@ export default function GerenciarFaturamento() {
   };
 
   const handleViewInvoicePDF = async (invoice) => {
-    if (invoice.invoice_document_url) {
-      window.open(invoice.invoice_document_url, '_blank');
-    } else {
-      // Regenerar PDF sob demanda
-      setIsGeneratingPDF(true);
-      try {
-        const allIds = [
-          ...(invoice.related_service_requests_ids || []),
-          ...(invoice.related_supplier_own_booking_ids || [])
-        ];
+    setIsGeneratingPDF(true);
+    try {
+      const allIds = [
+        ...(invoice.related_service_requests_ids || []),
+        ...(invoice.related_supplier_own_booking_ids || [])
+      ];
 
-        if (allIds.length === 0) {
-          alert('Esta fatura não possui viagens vinculadas.');
-          return;
-        }
-
-        const response = await base44.functions.invoke('generateSupplierInvoicePDF', {
-          serviceRequestIds: allIds,
-          groupingType: 'none', // Padrão para regeneração
-          recipientEmail: null,
-          sendEmail: false,
-          period_start: invoice.period_start,
-          period_end: invoice.period_end,
-          invoiceNumber: invoice.invoice_number
-        });
-
-        const blob = new Blob([response.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        window.open(url, '_blank');
-      } catch (error) {
-        console.error('Erro ao visualizar PDF:', error);
-        alert('Erro ao gerar visualização do relatório: ' + error.message);
-      } finally {
-        setIsGeneratingPDF(false);
+      if (allIds.length === 0) {
+        alert('Esta fatura não possui viagens vinculadas.');
+        return;
       }
+
+      const response = await base44.functions.invoke('generateSupplierInvoicePDF', {
+        invoiceId: invoice.id,
+        serviceRequestIds: allIds,
+        groupingType: 'none',
+        recipientEmail: null,
+        sendEmail: false,
+        period_start: invoice.period_start,
+        period_end: invoice.period_end,
+        invoiceNumber: invoice.invoice_number
+      });
+
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (pdfError) {
+      console.error('Erro ao visualizar PDF:', pdfError);
+      alert('Erro ao gerar visualização do relatório: ' + pdfError.message);
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -922,24 +921,23 @@ export default function GerenciarFaturamento() {
     return labels[type] || type;
   };
 
-  const getExpenseIcon = (type) => {
-    const icons = {
-      estacionamento: ParkingCircle,
-      pedagio: DollarSign,
-      hora_espera: Timer,
-      outros: FileText
-    };
-    return icons[type] || DollarSign;
+  const parseDateOnly = (dateString) => {
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const formatDateOnly = (dateString) => {
+    const parsedDate = parseDateOnly(dateString);
+    return parsedDate ? format(parsedDate, 'dd/MM/yyyy', { locale: ptBR }) : '-';
   };
 
   const formatPrice = (price) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(price);
+    }).format(price || 0);
   };
-
-
 
   if (isCheckingAuth) {
     return (
@@ -970,7 +968,7 @@ export default function GerenciarFaturamento() {
           </Alert>
         )}
 
-        {error && !showInvoiceDialog && !showReviewDialog && (
+        {error && !showInvoiceDialog && !showReviewDialog && !showManualInvoiceDialog && (
           <Alert variant="destructive" className="mb-6">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>{error}</AlertDescription>
@@ -1033,7 +1031,7 @@ export default function GerenciarFaturamento() {
                                 <div>
                                   <div className="text-gray-600 mb-1">Data:</div>
                                   <div className="font-semibold">
-                                    {format(new Date(request.date + 'T00:00:00'), "dd/MM/yyyy", { locale: ptBR })} às {request.time}
+                                    {formatDateOnly(request.date)} às {request.time}
                                   </div>
                                 </div>
                                 <div>
@@ -1075,10 +1073,7 @@ export default function GerenciarFaturamento() {
                               )}
                             </div>
 
-                            <Button
-                              onClick={() => handleOpenReview(request)}
-                              className="bg-orange-600 hover:bg-orange-700"
-                            >
+                            <Button onClick={() => handleOpenReview(request)} className="bg-orange-600 hover:bg-orange-700">
                               <Edit className="w-4 h-4 mr-2" />
                               Revisar
                             </Button>
@@ -1095,7 +1090,19 @@ export default function GerenciarFaturamento() {
           <TabsContent value="billable">
             <BillableTripsSection
               billableRequests={billableRequests}
-              allTrips={[...allSupplierServiceRequests.map(r=>({...r,type:'ServiceRequest',origin_type:'corporate'})),...allSupplierOwnBookings.map(b=>({...b,type:'SupplierOwnBooking',origin_type:'own',request_number:b.booking_number,chosen_supplier_cost:b.price||0,total_additional_expenses_approved:0,user_id:null,billing_responsible_name:b.passenger_name}))]}
+              allTrips={[
+                ...allSupplierServiceRequests.map(r => ({ ...r, type: 'ServiceRequest', origin_type: 'corporate' })),
+                ...allSupplierOwnBookings.map(b => ({
+                  ...b,
+                  type: 'SupplierOwnBooking',
+                  origin_type: 'own',
+                  request_number: b.booking_number,
+                  chosen_supplier_cost: b.price || 0,
+                  total_additional_expenses_approved: 0,
+                  user_id: null,
+                  billing_responsible_name: b.passenger_name
+                }))
+              ]}
               showAllTrips={showAllTrips}
               setShowAllTrips={setShowAllTrips}
               clients={clients}
@@ -1113,7 +1120,6 @@ export default function GerenciarFaturamento() {
           </TabsContent>
 
           <TabsContent value="invoices">
-            {/* Dashboard de Recebíveis */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <Card className="bg-blue-50 border-blue-200">
                 <CardContent className="p-6">
@@ -1158,28 +1164,31 @@ export default function GerenciarFaturamento() {
             <Card>
               <CardHeader>
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <CardTitle>Histórico de Faturas</CardTitle>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <CardTitle>Histórico de Faturas</CardTitle>
+                    <Button onClick={() => { setError(''); setShowManualInvoiceDialog(true); }} className="bg-blue-600 hover:bg-blue-700">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Lançar Fatura Manual
+                    </Button>
+                  </div>
                   <div className="flex flex-wrap gap-2 items-center">
                     <div className="flex items-center gap-2 border rounded-md p-1 bg-white">
                       <Calendar className="w-4 h-4 text-gray-500 ml-2" />
-                      <Input 
-                        type="date" 
-                        className="border-0 h-8 w-32 text-xs" 
+                      <Input
+                        type="date"
+                        className="border-0 h-8 w-32 text-xs"
                         value={invoiceFilters.start}
-                        onChange={(e) => setInvoiceFilters({...invoiceFilters, start: e.target.value})}
+                        onChange={(e) => setInvoiceFilters({ ...invoiceFilters, start: e.target.value })}
                       />
                       <span className="text-gray-400">-</span>
-                      <Input 
-                        type="date" 
-                        className="border-0 h-8 w-32 text-xs" 
+                      <Input
+                        type="date"
+                        className="border-0 h-8 w-32 text-xs"
                         value={invoiceFilters.end}
-                        onChange={(e) => setInvoiceFilters({...invoiceFilters, end: e.target.value})}
+                        onChange={(e) => setInvoiceFilters({ ...invoiceFilters, end: e.target.value })}
                       />
                     </div>
-                    <Select 
-                      value={invoiceFilters.finance_status} 
-                      onValueChange={(v) => setInvoiceFilters({...invoiceFilters, finance_status: v})}
-                    >
+                    <Select value={invoiceFilters.finance_status} onValueChange={(v) => setInvoiceFilters({ ...invoiceFilters, finance_status: v })}>
                       <SelectTrigger className="w-[180px] h-10">
                         <SelectValue placeholder="Status Financeiro" />
                       </SelectTrigger>
@@ -1215,21 +1224,22 @@ export default function GerenciarFaturamento() {
                                 <span className="font-mono font-bold text-blue-600 text-lg">
                                   {invoice.invoice_number}
                                 </span>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 flex-wrap">
+                                  {invoice.invoice_type === 'manual' && (
+                                    <Badge className="bg-slate-100 text-slate-700 border border-slate-300">Manual</Badge>
+                                  )}
                                   {getInvoiceStatusBadge(invoice.status)}
                                   {getFinanceStatusBadge(invoice.finance_status || 'pending')}
                                 </div>
                               </div>
                               {(() => {
-                                let clientName = null;
-                                let isParticular = false;
+                                let clientName = invoice.manual_client_name || null;
+                                let isParticular = invoice.invoice_type === 'manual';
 
-                                // 1. Tenta pegar pelo ID do cliente direto na fatura
-                                if (invoice.client_id) {
+                                if (!clientName && invoice.client_id) {
                                   clientName = clients.find(c => c.id === invoice.client_id)?.name;
                                 }
 
-                                // 2. Se não achou, tenta pelas ServiceRequests (Corporativo Plataforma)
                                 if (!clientName && invoice.related_service_requests_ids?.length > 0) {
                                   const firstReqId = invoice.related_service_requests_ids[0];
                                   const req = allSupplierServiceRequests.find(r => r.id === firstReqId);
@@ -1238,21 +1248,16 @@ export default function GerenciarFaturamento() {
                                   }
                                 }
 
-                                // 3. Se não achou, tenta pelas SupplierOwnBookings (Clientes Próprios ou Particulares)
                                 if (!clientName && invoice.related_supplier_own_booking_ids?.length > 0) {
                                   const firstBookingId = invoice.related_supplier_own_booking_ids[0];
                                   const booking = allSupplierOwnBookings.find(b => b.id === firstBookingId);
-                                  
                                   if (booking) {
                                     if (booking.client_id) {
-                                      // Cliente Próprio Cadastrado
                                       clientName = clients.find(c => c.id === booking.client_id)?.name;
-                                    } 
-                                    
-                                    // Se ainda não tem nome (Particular sem cadastro de cliente), usa o nome do passageiro/cliente da booking
+                                    }
                                     if (!clientName) {
-                                       clientName = booking.passenger_name || 'Cliente Particular';
-                                       isParticular = true;
+                                      clientName = booking.passenger_name || 'Cliente Particular';
+                                      isParticular = true;
                                     }
                                   }
                                 }
@@ -1271,13 +1276,13 @@ export default function GerenciarFaturamento() {
                                 <div>
                                   <span className="text-gray-600 block">Emissão:</span>
                                   <span className="font-medium">
-                                    {format(new Date(invoice.created_date), "dd/MM/yyyy", { locale: ptBR })}
+                                    {format(new Date(invoice.created_date), 'dd/MM/yyyy', { locale: ptBR })}
                                   </span>
                                 </div>
                                 <div>
                                   <span className="text-gray-600 block">Vencimento:</span>
                                   <span className="font-medium">
-                                    {invoice.due_date ? format(new Date(invoice.due_date), "dd/MM/yyyy", { locale: ptBR }) : '-'}
+                                    {formatDateOnly(invoice.due_date)}
                                   </span>
                                 </div>
                                 <div>
@@ -1295,10 +1300,10 @@ export default function GerenciarFaturamento() {
                               </div>
                               {invoice.paid_amount > 0 && invoice.paid_amount < invoice.total_amount && (
                                 <div className="mt-2 w-full bg-gray-100 rounded-full h-2">
-                                  <div 
-                                    className="bg-green-500 h-2 rounded-full" 
+                                  <div
+                                    className="bg-green-500 h-2 rounded-full"
                                     style={{ width: `${Math.min((invoice.paid_amount / invoice.total_amount) * 100, 100)}%` }}
-                                  ></div>
+                                  />
                                 </div>
                               )}
                             </div>
@@ -1312,7 +1317,7 @@ export default function GerenciarFaturamento() {
                                 <Eye className="w-4 h-4 mr-2" />
                                 Detalhes
                               </Button>
-                              
+
                               {invoice.finance_status !== 'paid_full' && invoice.status !== 'rascunho' && invoice.status !== 'rejeitada' && (
                                 <Button
                                   onClick={() => handleOpenPaymentDialog(invoice)}
@@ -1335,7 +1340,7 @@ export default function GerenciarFaturamento() {
                                   Aprovar
                                 </Button>
                               )}
-                              
+
                               {invoice.status === 'aprovada_externamente' && (
                                 <Button
                                   onClick={() => handleOpenCompleteInvoice(invoice)}
@@ -1359,12 +1364,18 @@ export default function GerenciarFaturamento() {
         </Tabs>
 
         <ReviewDialog
-          showReviewDialog={showReviewDialog} setShowReviewDialog={setShowReviewDialog}
-          reviewingRequest={reviewingRequest} setReviewingRequest={setReviewingRequest}
-          approvedExpenses={approvedExpenses} setApprovedExpenses={setApprovedExpenses}
-          newExpense={newExpense} setNewExpense={setNewExpense}
-          reviewNotes={reviewNotes} setReviewNotes={setReviewNotes}
-          reviewError={reviewError} setReviewError={setReviewError}
+          showReviewDialog={showReviewDialog}
+          setShowReviewDialog={setShowReviewDialog}
+          reviewingRequest={reviewingRequest}
+          setReviewingRequest={setReviewingRequest}
+          approvedExpenses={approvedExpenses}
+          setApprovedExpenses={setApprovedExpenses}
+          newExpense={newExpense}
+          setNewExpense={setNewExpense}
+          reviewNotes={reviewNotes}
+          setReviewNotes={setReviewNotes}
+          reviewError={reviewError}
+          setReviewError={setReviewError}
           isApprovingReview={isApprovingReview}
           handleAddExpenseInReview={handleAddExpenseInReview}
           handleRemoveExpenseInReview={handleRemoveExpenseInReview}
@@ -1373,7 +1384,16 @@ export default function GerenciarFaturamento() {
           handleApproveReview={handleApproveReview}
         />
 
-        {/* Dialog de Criar Fatura - ATUALIZADO */}
+        <ManualInvoiceDialog
+          open={showManualInvoiceDialog}
+          onOpenChange={setShowManualInvoiceDialog}
+          data={manualInvoiceData}
+          setData={setManualInvoiceData}
+          onSubmit={handleCreateManualInvoice}
+          isPending={createManualInvoiceMutation.isPending}
+          error={showManualInvoiceDialog ? error : ''}
+        />
+
         <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -1391,7 +1411,6 @@ export default function GerenciarFaturamento() {
                 </Alert>
               )}
 
-              {/* Resumo das viagens selecionadas */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="font-semibold text-blue-900 mb-2">📊 Resumo</h3>
                 <div className="space-y-1 text-sm">
@@ -1403,10 +1422,9 @@ export default function GerenciarFaturamento() {
                     <span className="text-blue-700">Valor Total:</span>
                     <span className="font-bold text-green-600 text-lg">
                       {formatPrice(
-                        (showAllTrips 
-                          ? [...allSupplierServiceRequests,...allSupplierOwnBookings]
-                          : billableRequests
-                        ).filter(r => selectedRequests.includes(r.id)).reduce((sum, r) => sum + ((r.chosen_supplier_cost || r.price || 0) + ((r.type === 'SupplierOwnBooking' ? 0 : r.total_additional_expenses_approved) || 0)), 0)
+                        (showAllTrips ? [...allSupplierServiceRequests, ...allSupplierOwnBookings] : billableRequests)
+                          .filter(r => selectedRequests.includes(r.id))
+                          .reduce((sum, r) => sum + ((r.chosen_supplier_cost || r.price || 0) + ((r.type === 'SupplierOwnBooking' ? 0 : r.total_additional_expenses_approved) || 0)), 0)
                       )}
                     </span>
                   </div>
@@ -1414,17 +1432,16 @@ export default function GerenciarFaturamento() {
                     <span className="text-blue-700">Agrupamento:</span>
                     <span className="font-semibold text-blue-900">
                       {groupBy === 'none' ? 'Sem Agrupamento' :
-                       groupBy === 'client' ? 'Por Cliente' :
-                       groupBy === 'billing_responsible' ? 'Por Responsável Financeiro' :
-                       groupBy === 'cost_center' ? 'Por Centro de Custo' : // Updated here
-                       groupBy === 'billing_method' ? 'Por Método de Faturamento' : // Updated here
-                       groupBy === 'month' ? 'Por Mês' : '-'}
+                        groupBy === 'client' ? 'Por Cliente' :
+                        groupBy === 'billing_responsible' ? 'Por Responsável Financeiro' :
+                        groupBy === 'cost_center' ? 'Por Centro de Custo' :
+                        groupBy === 'billing_method' ? 'Por Método de Faturamento' :
+                        groupBy === 'month' ? 'Por Mês' : '-'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Período da Fatura */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="period_start">Data de Início *</Label>
@@ -1446,7 +1463,6 @@ export default function GerenciarFaturamento() {
                 </div>
               </div>
 
-              {/* Escolha de Envio */}
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Como deseja enviar o relatório?</Label>
 
@@ -1454,54 +1470,37 @@ export default function GerenciarFaturamento() {
                   <button
                     type="button"
                     onClick={() => setSendOption('email')}
-                    className={`p-4 border-2 rounded-lg transition-all ${
-                      sendOption === 'email'
-                        ? 'border-blue-600 bg-blue-50 shadow-md'
-                        : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'
-                    }`}
+                    className={`p-4 border-2 rounded-lg transition-all ${sendOption === 'email' ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-gray-300 hover:border-blue-300 hover:bg-gray-50'}`}
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        sendOption === 'email' ? 'bg-blue-600' : 'bg-gray-300'
-                      }`}>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${sendOption === 'email' ? 'bg-blue-600' : 'bg-gray-300'}`}>
                         <Mail className={`w-6 h-6 ${sendOption === 'email' ? 'text-white' : 'text-gray-600'}`} />
                       </div>
                       <span className={`font-semibold ${sendOption === 'email' ? 'text-blue-900' : 'text-gray-700'}`}>
                         Enviar por E-mail
                       </span>
-                      <span className="text-xs text-gray-500 text-center">
-                        Envio automático para o destinatário
-                      </span>
+                      <span className="text-xs text-gray-500 text-center">Envio automático para o destinatário</span>
                     </div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setSendOption('download')}
-                    className={`p-4 border-2 rounded-lg transition-all ${
-                      sendOption === 'download'
-                        ? 'border-green-600 bg-green-50 shadow-md'
-                        : 'border-gray-300 hover:border-green-300 hover:bg-gray-50'
-                    }`}
+                    className={`p-4 border-2 rounded-lg transition-all ${sendOption === 'download' ? 'border-green-600 bg-green-50 shadow-md' : 'border-gray-300 hover:border-green-300 hover:bg-gray-50'}`}
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        sendOption === 'download' ? 'bg-green-600' : 'bg-gray-300'
-                      }`}>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${sendOption === 'download' ? 'bg-green-600' : 'bg-gray-300'}`}>
                         <FileText className={`w-6 h-6 ${sendOption === 'download' ? 'text-white' : 'text-gray-600'}`} />
                       </div>
                       <span className={`font-semibold ${sendOption === 'download' ? 'text-green-900' : 'text-gray-700'}`}>
                         Gerar PDF
                       </span>
-                      <span className="text-xs text-gray-500 text-center">
-                        Download para envio posterior
-                      </span>
+                      <span className="text-xs text-gray-500 text-center">Download para envio posterior</span>
                     </div>
                   </button>
                 </div>
               </div>
 
-              {/* Campo de email condicional */}
               {sendOption === 'email' && (
                 <div className="space-y-2 bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <Label htmlFor="external_reviewer_email" className="flex items-center gap-2">
@@ -1516,9 +1515,7 @@ export default function GerenciarFaturamento() {
                     placeholder="financeiro@empresa.com"
                     className="bg-white"
                   />
-                  <p className="text-xs text-blue-700">
-                    📧 O relatório será enviado automaticamente para este e-mail
-                  </p>
+                  <p className="text-xs text-blue-700">📧 O relatório será enviado automaticamente para este e-mail</p>
                 </div>
               )}
 
@@ -1561,34 +1558,26 @@ export default function GerenciarFaturamento() {
                   </>
                 )}
               </Button>
-              <Button
-                onClick={handleGeneratePDF}
-                disabled={isGeneratingPDF || !sendOption}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
+              <Button onClick={handleGeneratePDF} disabled={isGeneratingPDF || !sendOption} className="bg-blue-600 hover:bg-blue-700">
                 {isGeneratingPDF ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Gerando...
                   </>
+                ) : sendOption === 'email' ? (
+                  <>
+                    <Mail className="w-4 h-4 mr-2" />
+                    Gerar e Enviar por E-mail
+                  </>
+                ) : sendOption === 'download' ? (
+                  <>
+                    <FileText className="w-4 h-4 mr-2" />
+                    Gerar e Baixar PDF
+                  </>
                 ) : (
                   <>
-                    {sendOption === 'email' ? (
-                      <>
-                        <Mail className="w-4 h-4 mr-2" />
-                        Gerar e Enviar por E-mail
-                      </>
-                    ) : sendOption === 'download' ? (
-                      <>
-                        <FileText className="w-4 h-4 mr-2" />
-                        Gerar e Baixar PDF
-                      </>
-                    ) : (
-                      <>
-                        <FileText className="w-4 h-4 mr-2" />
-                        Gerar Relatório
-                      </>
-                    )}
+                    <FileText className="w-4 h-4 mr-2" />
+                    Gerar Relatório
                   </>
                 )}
               </Button>
@@ -1596,7 +1585,6 @@ export default function GerenciarFaturamento() {
           </DialogContent>
         </Dialog>
 
-        {/* Dialog de Prévia do PDF */}
         <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
           <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden">
             <DialogHeader>
@@ -1608,11 +1596,7 @@ export default function GerenciarFaturamento() {
 
             <div className="w-full h-[75vh] border-2 border-gray-300 rounded-lg overflow-hidden">
               {previewPdfUrl ? (
-                <iframe
-                  src={previewPdfUrl}
-                  className="w-full h-full"
-                  title="Prévia do Relatório"
-                />
+                <iframe src={previewPdfUrl} className="w-full h-full" title="Prévia do Relatório" />
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="w-12 h-12 animate-spin text-purple-600" />
@@ -1637,8 +1621,6 @@ export default function GerenciarFaturamento() {
           </DialogContent>
         </Dialog>
 
-        {/* Dialog de Completar Dados da Fatura */}
-        {/* Dialog de Registrar Pagamento */}
         <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
@@ -1647,7 +1629,7 @@ export default function GerenciarFaturamento() {
                 Registrar Recebimento
               </DialogTitle>
             </DialogHeader>
-            
+
             {paymentInvoice && (
               <div className="space-y-4 py-4">
                 <div className="bg-gray-50 p-3 rounded-lg">
@@ -1673,7 +1655,7 @@ export default function GerenciarFaturamento() {
                     type="number"
                     step="0.01"
                     value={paymentFormData.amount}
-                    onChange={(e) => setPaymentFormData({...paymentFormData, amount: e.target.value})}
+                    onChange={(e) => setPaymentFormData({ ...paymentFormData, amount: e.target.value })}
                   />
                 </div>
 
@@ -1682,7 +1664,7 @@ export default function GerenciarFaturamento() {
                   <Input
                     type="date"
                     value={paymentFormData.date}
-                    onChange={(e) => setPaymentFormData({...paymentFormData, date: e.target.value})}
+                    onChange={(e) => setPaymentFormData({ ...paymentFormData, date: e.target.value })}
                   />
                 </div>
 
@@ -1690,16 +1672,16 @@ export default function GerenciarFaturamento() {
                   <Label>Observações</Label>
                   <Textarea
                     value={paymentFormData.notes}
-                    onChange={(e) => setPaymentFormData({...paymentFormData, notes: e.target.value})}
+                    onChange={(e) => setPaymentFormData({ ...paymentFormData, notes: e.target.value })}
                     placeholder="Ex: TED recebido do cliente..."
                   />
                 </div>
 
                 <div className="flex items-center space-x-2 pt-2">
-                  <Checkbox 
-                    id="full_payment" 
+                  <Checkbox
+                    id="full_payment"
                     checked={paymentFormData.is_full_payment}
-                    onCheckedChange={(checked) => setPaymentFormData({...paymentFormData, is_full_payment: checked})}
+                    onCheckedChange={(checked) => setPaymentFormData({ ...paymentFormData, is_full_payment: checked })}
                   />
                   <Label htmlFor="full_payment" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                     Marcar como quitação total
@@ -1710,11 +1692,7 @@ export default function GerenciarFaturamento() {
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>Cancelar</Button>
-              <Button 
-                onClick={handleRegisterPayment} 
-                className="bg-green-600 hover:bg-green-700"
-                disabled={registerPaymentMutation.isPending}
-              >
+              <Button onClick={handleRegisterPayment} className="bg-green-600 hover:bg-green-700" disabled={registerPaymentMutation.isPending}>
                 {registerPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                 Confirmar Recebimento
               </Button>
@@ -1749,9 +1727,7 @@ export default function GerenciarFaturamento() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex justify-between items-center">
                   <span className="text-green-800 font-semibold">Valor Total da Fatura:</span>
-                  <span className="text-3xl font-bold text-green-700">
-                    {formatPrice(completingInvoice?.total_amount || 0)}
-                  </span>
+                  <span className="text-3xl font-bold text-green-700">{formatPrice(completingInvoice?.total_amount || 0)}</span>
                 </div>
               </div>
 
@@ -1788,10 +1764,7 @@ export default function GerenciarFaturamento() {
 
                 <div className="space-y-2">
                   <Label htmlFor="payment_method">Forma de Recebimento *</Label>
-                  <Select
-                    value={invoiceCompleteData.payment_method_description}
-                    onValueChange={(value) => setInvoiceCompleteData({ ...invoiceCompleteData, payment_method_description: value })}
-                  >
+                  <Select value={invoiceCompleteData.payment_method_description} onValueChange={(value) => setInvoiceCompleteData({ ...invoiceCompleteData, payment_method_description: value })}>
                     <SelectTrigger id="payment_method">
                       <SelectValue placeholder="Selecione..." />
                     </SelectTrigger>
@@ -1836,11 +1809,7 @@ export default function GerenciarFaturamento() {
               >
                 Cancelar
               </Button>
-              <Button
-                onClick={handleSaveCompleteInvoice}
-                disabled={completeInvoiceMutation.isPending}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
+              <Button onClick={handleSaveCompleteInvoice} disabled={completeInvoiceMutation.isPending} className="bg-blue-600 hover:bg-blue-700">
                 {completeInvoiceMutation.isPending ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1857,7 +1826,6 @@ export default function GerenciarFaturamento() {
           </DialogContent>
         </Dialog>
 
-        {/* Dialog de Detalhes da Fatura */}
         <Dialog open={showInvoiceDetailsDialog} onOpenChange={setShowInvoiceDetailsDialog}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -1870,9 +1838,12 @@ export default function GerenciarFaturamento() {
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-gray-600">Número da Fatura</p>
-                      <p className="font-mono font-bold text-lg text-blue-600">
-                        {selectedInvoiceForDetails.invoice_number}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <p className="font-mono font-bold text-lg text-blue-600">{selectedInvoiceForDetails.invoice_number}</p>
+                        {selectedInvoiceForDetails.invoice_type === 'manual' && (
+                          <Badge className="bg-slate-100 text-slate-700 border border-slate-300">Manual</Badge>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Status</p>
@@ -1881,70 +1852,113 @@ export default function GerenciarFaturamento() {
                     <div>
                       <p className="text-sm text-gray-600">Período</p>
                       <p className="font-medium">
-                        {format(new Date(selectedInvoiceForDetails.period_start + 'T00:00:00'), "dd/MM/yyyy", { locale: ptBR })} - {format(new Date(selectedInvoiceForDetails.period_end + 'T00:00:00'), "dd/MM/yyyy", { locale: ptBR })}
+                        {formatDateOnly(selectedInvoiceForDetails.period_start)} - {formatDateOnly(selectedInvoiceForDetails.period_end)}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">Valor Total</p>
-                      <p className="font-bold text-2xl text-green-600">
-                        {formatPrice(selectedInvoiceForDetails.total_amount)}
-                      </p>
+                      <p className="font-bold text-2xl text-green-600">{formatPrice(selectedInvoiceForDetails.total_amount)}</p>
                     </div>
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-3">
-                    <h4 className="font-semibold">Solicitações Incluídas ({(selectedInvoiceForDetails.related_service_requests_ids?.length || 0) + (selectedInvoiceForDetails.related_supplier_own_booking_ids?.length || 0)})</h4>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleViewInvoicePDF(selectedInvoiceForDetails)}
-                      disabled={isGeneratingPDF}
-                    >
-                      {isGeneratingPDF ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
-                      Visualizar Relatório PDF
-                    </Button>
+                {selectedInvoiceForDetails.invoice_type === 'manual' ? (
+                  <div className="space-y-4">
+                    <h4 className="font-semibold">Dados do Lançamento Manual</h4>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <Card>
+                        <CardContent className="p-4 space-y-3">
+                          <div>
+                            <p className="text-sm text-gray-600">Cliente</p>
+                            <p className="font-semibold text-gray-900">{selectedInvoiceForDetails.manual_client_name || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">CPF / CNPJ</p>
+                            <p className="font-medium text-gray-900">{selectedInvoiceForDetails.manual_client_document || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">E-mail</p>
+                            <p className="font-medium text-gray-900">{selectedInvoiceForDetails.manual_client_email || '-'}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className="p-4 space-y-3">
+                          <div>
+                            <p className="text-sm text-gray-600">Forma de Recebimento</p>
+                            <p className="font-medium text-gray-900">{selectedInvoiceForDetails.payment_method_description || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Número do Recibo</p>
+                            <p className="font-medium text-gray-900">{selectedInvoiceForDetails.receipt_number || '-'}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600">Número da NF</p>
+                            <p className="font-medium text-gray-900">{selectedInvoiceForDetails.nf_number || '-'}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <Card>
+                      <CardContent className="p-4 space-y-3">
+                        <div>
+                          <p className="text-sm text-gray-600">Descrição</p>
+                          <p className="font-medium text-gray-900 whitespace-pre-line">{selectedInvoiceForDetails.manual_description || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Dados para Recebimento</p>
+                          <p className="font-medium text-gray-900 whitespace-pre-line">{selectedInvoiceForDetails.bank_account_details || '-'}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-gray-50">
-                          <TableHead>Nº Solicitação</TableHead>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Rota</TableHead>
-                          <TableHead>Valor</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedInvoiceForDetails.related_service_requests_ids && selectedInvoiceForDetails.related_service_requests_ids.length > 0 ? (
-                          selectedInvoiceForDetails.related_service_requests_ids.map((srId) => {
-                            const sr = allSupplierServiceRequests.find(s => s.id === srId);
-                            if (!sr) return <TableRow key={srId}><TableCell colSpan={4} className="text-gray-500">Solicitação não encontrada</TableCell></TableRow>;
-                            return (
-                              <TableRow key={sr.id}>
-                                <TableCell>
-                                  <span className="font-mono text-sm">{sr.request_number}</span>
-                                </TableCell>
-                                <TableCell>
-                                  {format(new Date(sr.date + 'T00:00:00'), "dd/MM/yyyy", { locale: ptBR })}
-                                </TableCell>
-                                <TableCell className="text-sm">
-                                  {sr.origin} → {sr.destination}
-                                </TableCell>
-                                <TableCell className="font-semibold text-green-600">
-                                  {formatPrice(sr.chosen_supplier_cost + (sr.total_additional_expenses_approved || 0))}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })
-                        ) : (
-                          <TableRow><TableCell colSpan={4} className="text-center text-gray-500 py-4">Nenhuma solicitação encontrada para esta fatura.</TableCell></TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                ) : (
+                  <div>
+                    <div className="flex justify-between items-center mb-3">
+                      <h4 className="font-semibold">Solicitações Incluídas ({(selectedInvoiceForDetails.related_service_requests_ids?.length || 0) + (selectedInvoiceForDetails.related_supplier_own_booking_ids?.length || 0)})</h4>
+                      <Button variant="outline" size="sm" onClick={() => handleViewInvoicePDF(selectedInvoiceForDetails)} disabled={isGeneratingPDF}>
+                        {isGeneratingPDF ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
+                        Visualizar Relatório PDF
+                      </Button>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gray-50">
+                            <TableHead>Nº Solicitação</TableHead>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Rota</TableHead>
+                            <TableHead>Valor</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedInvoiceForDetails.related_service_requests_ids && selectedInvoiceForDetails.related_service_requests_ids.length > 0 ? (
+                            selectedInvoiceForDetails.related_service_requests_ids.map((srId) => {
+                              const sr = allSupplierServiceRequests.find(s => s.id === srId);
+                              if (!sr) {
+                                return <TableRow key={srId}><TableCell colSpan={4} className="text-gray-500">Solicitação não encontrada</TableCell></TableRow>;
+                              }
+                              return (
+                                <TableRow key={sr.id}>
+                                  <TableCell>
+                                    <span className="font-mono text-sm">{sr.request_number}</span>
+                                  </TableCell>
+                                  <TableCell>{formatDateOnly(sr.date)}</TableCell>
+                                  <TableCell className="text-sm">{sr.origin} → {sr.destination}</TableCell>
+                                  <TableCell className="font-semibold text-green-600">
+                                    {formatPrice(sr.chosen_supplier_cost + (sr.total_additional_expenses_approved || 0))}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          ) : (
+                            <TableRow><TableCell colSpan={4} className="text-center text-gray-500 py-4">Nenhuma solicitação encontrada para esta fatura.</TableCell></TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1956,7 +1970,6 @@ export default function GerenciarFaturamento() {
           </DialogContent>
         </Dialog>
 
-        {/* Dialog de Editar Valor da Viagem */}
         <Dialog open={showEditBookingDialog} onOpenChange={setShowEditBookingDialog}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
@@ -1965,21 +1978,12 @@ export default function GerenciarFaturamento() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Novo Valor (R$)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editPriceValue}
-                  onChange={(e) => setEditPriceValue(e.target.value)}
-                />
+                <Input type="number" step="0.01" value={editPriceValue} onChange={(e) => setEditPriceValue(e.target.value)} />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowEditBookingDialog(false)}>Cancelar</Button>
-              <Button 
-                onClick={handleSaveEditBooking} 
-                className="bg-blue-600 hover:bg-blue-700"
-                disabled={updateBookingPriceMutation.isPending}
-              >
+              <Button onClick={handleSaveEditBooking} className="bg-blue-600 hover:bg-blue-700" disabled={updateBookingPriceMutation.isPending}>
                 {updateBookingPriceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                 Salvar
               </Button>

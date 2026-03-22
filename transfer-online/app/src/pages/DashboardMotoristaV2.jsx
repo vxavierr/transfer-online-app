@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { GeoService, BrowserService, StorageService } from '@/native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,17 +75,14 @@ export default function DashboardMotoristaV2() {
   const location = useLocation();
 
   useEffect(() => {
-    const loadDismissedAlerts = async () => {
-      const storedDismissedAlerts = await StorageService.get('dismissedDriverAlerts');
-      if (storedDismissedAlerts) {
-        try {
-          setDismissedAlerts(JSON.parse(storedDismissedAlerts));
-        } catch (e) {
-          console.error('Error parsing dismissed alerts', e);
-        }
+    const storedDismissedAlerts = localStorage.getItem('dismissedDriverAlerts');
+    if (storedDismissedAlerts) {
+      try {
+        setDismissedAlerts(JSON.parse(storedDismissedAlerts));
+      } catch (e) {
+        console.error('Error parsing dismissed alerts', e);
       }
-    };
-    loadDismissedAlerts();
+    }
 
     const params = new URLSearchParams(location.search);
     
@@ -107,16 +103,19 @@ export default function DashboardMotoristaV2() {
 
   useEffect(() => {
     // Solicitar permissão de GPS no início se ainda não foi concedida/solicitada
-    const askForGPS = async () => {
-      const hasPermission = await StorageService.get('gps_permission_granted') === 'true';
-      if (!hasPermission && GeoService.isAvailable()) {
-        try {
-          await GeoService.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 });
-          await StorageService.set('gps_permission_granted', 'true');
-        } catch (error) {
-          console.warn('GPS request on dashboard denied/error:', error);
-          await StorageService.set('gps_permission_granted', 'false');
-        }
+    const askForGPS = () => {
+      const hasPermission = localStorage.getItem('gps_permission_granted') === 'true';
+      if (!hasPermission && 'geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          () => {
+            localStorage.setItem('gps_permission_granted', 'true');
+          },
+          (error) => {
+            console.warn('GPS request on dashboard denied/error:', error);
+            localStorage.setItem('gps_permission_granted', 'false');
+          },
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
       }
     };
 
@@ -281,7 +280,7 @@ export default function DashboardMotoristaV2() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FDashboardMotoristaV2';
       }
     };
 
@@ -537,7 +536,7 @@ export default function DashboardMotoristaV2() {
     
     acknowledgeTripMutation.mutate(trip.id);
     
-    BrowserService.open(calendarUrl, '_blank');
+    window.open(calendarUrl, '_blank');
   };
 
   const handleDismissNewTrip = (tripId) => {
@@ -547,7 +546,7 @@ export default function DashboardMotoristaV2() {
   const handleDismissAlert = (alertId) => {
     const newDismissedAlerts = [...dismissedAlerts, alertId];
     setDismissedAlerts(newDismissedAlerts);
-    StorageService.set('dismissedDriverAlerts', JSON.stringify(newDismissedAlerts)).catch(() => {});
+    localStorage.setItem('dismissedDriverAlerts', JSON.stringify(newDismissedAlerts));
   };
 
   if (isCheckingAuth) {
@@ -813,7 +812,7 @@ function TripsList({ trips, title, emptyMessage, onViewTrip, onAddToCalendar, sh
       // Usar esquema waze:// para forçar abertura do app
       window.location.href = `waze://?q=${encoded}&navigate=yes`;
     } else {
-      BrowserService.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
     }
   };
 

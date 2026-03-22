@@ -46,7 +46,7 @@ export default function Configuracoes() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error("Authentication check failed:", error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FConfiguracoes';
       }
     };
 

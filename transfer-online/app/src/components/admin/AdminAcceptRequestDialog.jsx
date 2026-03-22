@@ -18,6 +18,8 @@ export default function AdminAcceptRequestDialog({ open, onClose, trip, onSucces
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [driverVehicles, setDriverVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [loadingVehicles, setLoadingVehicles] = useState(false);
+  const [vehicleLoadError, setVehicleLoadError] = useState('');
   const [manualVehicleModel, setManualVehicleModel] = useState('');
   const [manualVehiclePlate, setManualVehiclePlate] = useState('');
   const [driverPayout, setDriverPayout] = useState('');
@@ -53,6 +55,8 @@ export default function AdminAcceptRequestDialog({ open, onClose, trip, onSucces
       setDriverPayout('');
       setError('');
       setDrivers([]);
+      setDriverVehicles([]);
+      setVehicleLoadError('');
       
       // Carregar motoristas se necessário
       fetchDrivers();
@@ -89,37 +93,43 @@ export default function AdminAcceptRequestDialog({ open, onClose, trip, onSucces
     setManualVehicleModel('');
     setManualVehiclePlate('');
     setDriverSchedule([]);
-    
-    if (driverId && driverId !== 'new') {
-      // Buscar veículos do motorista
-      try {
-        const vehiclesPromise = base44.entities.DriverVehicle.filter({ driver_id: driverId, active: true });
-        
-        // Buscar agenda do motorista
-        const date = trip.date; // Data da viagem sendo atribuída
-        const schedulePromise = base44.functions.invoke('getDriverSchedule', { driver_id: driverId, date });
+    setDriverVehicles([]);
+    setVehicleLoadError('');
 
-        setLoadingSchedule(true);
-        const [vehicles, scheduleRes] = await Promise.all([vehiclesPromise, schedulePromise]);
-        
-        setDriverVehicles(vehicles);
-        if (scheduleRes.data?.trips) {
-          setDriverSchedule(scheduleRes.data.trips);
+    if (driverId && driverId !== 'new') {
+      setLoadingSchedule(true);
+      setLoadingVehicles(true);
+
+      const date = trip.date;
+      const [vehiclesResult, scheduleResult] = await Promise.allSettled([
+        base44.functions.invoke('getDriverVehiclesForAdmin', { driver_id: driverId }),
+        base44.functions.invoke('getDriverSchedule', { driver_id: driverId, date })
+      ]);
+
+      if (vehiclesResult.status === 'fulfilled') {
+        const activeVehicles = vehiclesResult.value?.data?.vehicles || [];
+        setDriverVehicles(activeVehicles);
+
+        if (activeVehicles.length > 0) {
+          const defaultVehicle = activeVehicles.find((vehicle) => vehicle.is_default);
+          const vehicleToSelect = defaultVehicle || activeVehicles[0];
+          setSelectedVehicleId(vehicleToSelect.id);
+          setManualVehicleModel(vehicleToSelect.vehicle_model || '');
+          setManualVehiclePlate(vehicleToSelect.vehicle_plate || '');
         }
-        
-        // Se tiver apenas um veículo, selecionar automaticamente
-        if (vehicles.length === 1) {
-          setSelectedVehicleId(vehicles[0].id);
-          setManualVehicleModel(vehicles[0].vehicle_model);
-          setManualVehiclePlate(vehicles[0].vehicle_plate);
-        }
-      } catch (err) {
-        console.error("Erro ao buscar dados do motorista:", err);
-      } finally {
-        setLoadingSchedule(false);
+      } else {
+        console.error('Erro ao carregar veículos do motorista:', vehiclesResult.reason);
+        setVehicleLoadError('Erro ao carregar os veículos deste motorista.');
       }
-    } else {
-      setDriverVehicles([]);
+
+      if (scheduleResult.status === 'fulfilled' && scheduleResult.value?.data?.trips) {
+        setDriverSchedule(scheduleResult.value.data.trips);
+      } else if (scheduleResult.status === 'rejected') {
+        console.warn('Erro ao carregar agenda do motorista:', scheduleResult.reason);
+      }
+
+      setLoadingSchedule(false);
+      setLoadingVehicles(false);
     }
   };
 
@@ -329,7 +339,13 @@ export default function AdminAcceptRequestDialog({ open, onClose, trip, onSucces
               {selectedDriverId && (
                 <div className="space-y-2">
                   <Label>Veículo</Label>
-                  {driverVehicles.length > 0 ? (
+                  {loadingVehicles ? (
+                    <div className="flex items-center text-sm text-gray-500">
+                      <Loader2 className="w-3 h-3 mr-2 animate-spin" /> Carregando veículos...
+                    </div>
+                  ) : vehicleLoadError ? (
+                    <div className="text-xs text-red-600 mb-2">{vehicleLoadError}</div>
+                  ) : driverVehicles.length > 0 ? (
                     <Select value={selectedVehicleId} onValueChange={handleVehicleChange}>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione o veículo" />

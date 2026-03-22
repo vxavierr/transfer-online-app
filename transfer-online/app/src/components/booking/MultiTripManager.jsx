@@ -24,6 +24,11 @@ export default function MultiTripManager({
   const [calculatingPrices, setCalculatingPrices] = useState({});
   const [legErrors, setLegErrors] = useState({});
 
+  const isAddressReady = (value) => {
+    const normalized = String(value || '').trim();
+    return normalized.length >= 8 && /[A-Za-zÀ-ÿ]/.test(normalized);
+  };
+
   const addNewLeg = () => {
     const newLeg = {
       id: Date.now().toString(),
@@ -48,11 +53,20 @@ export default function MultiTripManager({
 
   const updateLeg = (legId, updates) => {
     console.log('[MultiTripManager] updateLeg called:', legId, updates);
+    setLegErrors(prev => ({ ...prev, [legId]: null }));
+
     setLegs(prevLegs => prevLegs.map(leg => {
       if (leg.id === legId) {
         const updated = { ...leg, ...updates };
+        const shouldResetPrice = ['origin', 'destination', 'date', 'time', 'vehicleTypeId'].some(
+          (field) => updates[field] !== undefined
+        );
+
+        if (shouldResetPrice) {
+          updated.calculatedPrice = null;
+          updated.calculationDetails = null;
+        }
         
-        // Check if origin/destination is airport
         if (updates.origin !== undefined) {
           updated.originIsAirport = isAirport(updates.origin);
         }
@@ -69,7 +83,7 @@ export default function MultiTripManager({
 
   const calculatePriceForLeg = async (legId) => {
     const leg = legs.find(l => l.id === legId);
-    if (!leg || !leg.origin || !leg.destination || !leg.date || !leg.time || !leg.vehicleTypeId) {
+    if (!leg || !isAddressReady(leg.origin) || !isAddressReady(leg.destination) || !leg.date || !leg.time || !leg.vehicleTypeId) {
       return;
     }
 
@@ -111,22 +125,44 @@ export default function MultiTripManager({
   // Auto-calculate when all required fields are filled
   useEffect(() => {
     if (!user && !canViewPricesWithoutLogin) return;
-    
-    legs.forEach(leg => {
-      if (leg.origin && leg.destination && leg.date && leg.time && leg.vehicleTypeId && !leg.calculatedPrice && !calculatingPrices[leg.id]) {
+
+    const pendingLegs = legs.filter(
+      (leg) => isAddressReady(leg.origin) && isAddressReady(leg.destination) && leg.date && leg.time && leg.vehicleTypeId && !leg.calculatedPrice && !calculatingPrices[leg.id]
+    );
+
+    if (pendingLegs.length === 0) return;
+
+    const timer = setTimeout(() => {
+      pendingLegs.forEach((leg) => {
         console.log('[MultiTripManager] Auto-calculating price for leg', leg.id);
         calculatePriceForLeg(leg.id);
-      }
-    });
-  }, [legs, user, canViewPricesWithoutLogin]);
+      });
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [legs, user, canViewPricesWithoutLogin, calculatingPrices, driverLanguage]);
 
   const totalPrice = legs.reduce((sum, leg) => sum + (leg.calculatedPrice || 0), 0);
+  const completedLegs = legs.filter((leg) => Number(leg.calculatedPrice) > 0).length;
+  const readyToCalculateLegs = legs.filter(
+    (leg) => isAddressReady(leg.origin) && isAddressReady(leg.destination) && leg.date && leg.time && leg.vehicleTypeId
+  ).length;
 
   return (
     <div className="space-y-4">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
         <h3 className="font-bold text-sm text-blue-900 mb-1">{t('novaReserva.multiTripTitle')}</h3>
         <p className="text-xs text-blue-700">{t('novaReserva.multiTripDesc')}</p>
+        <div className="bg-white/70 border border-blue-100 rounded-lg p-3 space-y-1.5">
+          <p className="text-xs font-semibold text-blue-900">{t('novaReserva.multiTripPricingInfoTitle')}</p>
+          <p className="text-xs text-blue-700">{t('novaReserva.multiTripPricingInfoDesc')}</p>
+          <p className="text-xs font-medium text-blue-800">
+            {t('novaReserva.multiTripCalculationProgress', {
+              completed: completedLegs,
+              total: readyToCalculateLegs || legs.length
+            })}
+          </p>
+        </div>
       </div>
 
       {legs.map((leg, index) => (
@@ -213,7 +249,11 @@ export default function MultiTripManager({
                 </Label>
                 <Input
                   type="date"
-                  min={minDateBasedOnLeadTime}
+                  min={(() => {
+                    const minDate = new Date();
+                    minDate.setHours(minDate.getHours() + 48);
+                    return format(minDate, 'yyyy-MM-dd');
+                  })()}
                   value={leg.date}
                   onChange={(e) => updateLeg(leg.id, { date: e.target.value })}
                   className="text-xs h-9 rounded-lg bg-gray-50"
@@ -252,11 +292,16 @@ export default function MultiTripManager({
                 className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm"
               >
                 <option value="">{t('novaReserva.selectVehiclePlaceholder')}</option>
-                {vehicleTypes.map(vehicle => (
-                  <option key={vehicle.id} value={vehicle.id}>
-                    {vehicle.name} ({vehicle.max_passengers} {t('novaReserva.passengers')})
-                  </option>
-                ))}
+                {vehicleTypes
+                  .filter(vehicle => {
+                    const allowedVehicles = ['sedan executivo', 'sedan blindado', 'van executiva', 'van'];
+                    return allowedVehicles.some(allowed => vehicle.name.toLowerCase().includes(allowed));
+                  })
+                  .map(vehicle => (
+                    <option key={vehicle.id} value={vehicle.id}>
+                      {vehicle.name} ({vehicle.max_passengers} {t('novaReserva.passengers')})
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -270,6 +315,12 @@ export default function MultiTripManager({
             {calculatingPrices[leg.id] && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
                 <p className="text-xs text-blue-700">{t('novaReserva.calculating')}</p>
+              </div>
+            )}
+
+            {!legErrors[leg.id] && !calculatingPrices[leg.id] && !leg.calculatedPrice && leg.origin && leg.destination && leg.date && leg.time && leg.vehicleTypeId && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                <p className="text-xs font-medium text-amber-800">{t('novaReserva.multiTripWaitingCalculation')}</p>
               </div>
             )}
 

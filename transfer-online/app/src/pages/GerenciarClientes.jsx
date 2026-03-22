@@ -47,6 +47,8 @@ ShieldCheck,
 GripVertical
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { Link2 } from 'lucide-react';
+import ClientAuditAccessDialog from '@/components/admin/ClientAuditAccessDialog';
 
 export default function GerenciarClientes() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -69,6 +71,7 @@ export default function GerenciarClientes() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [auditClient, setAuditClient] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -87,6 +90,8 @@ export default function GerenciarClientes() {
     supplier_priority_order: [],
     auto_fallback_enabled: true,
     supplier_response_timeout_minutes: 60,
+    has_cost_centers: true,
+    requires_purchase_order_number: false,
     driver_approval_configs: [], // Nova configuração
     active: true,
     notes: ''
@@ -110,7 +115,7 @@ export default function GerenciarClientes() {
         setUser(currentUser);
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarClientes';
       }
     };
 
@@ -240,6 +245,8 @@ export default function GerenciarClientes() {
       supplier_priority_order: [],
       auto_fallback_enabled: true,
       supplier_response_timeout_minutes: 60,
+      has_cost_centers: true,
+      requires_purchase_order_number: false,
       active: true,
       notes: ''
     });
@@ -292,6 +299,8 @@ export default function GerenciarClientes() {
         supplier_priority_order: fullPriorityOrder,
         auto_fallback_enabled: client.auto_fallback_enabled !== false,
         supplier_response_timeout_minutes: client.supplier_response_timeout_minutes || 60,
+        has_cost_centers: client.has_cost_centers !== false,
+        requires_purchase_order_number: client.requires_purchase_order_number === true,
         driver_approval_configs: client.driver_approval_configs || [],
         active: client.active !== false,
         notes: client.notes || ''
@@ -315,6 +324,8 @@ export default function GerenciarClientes() {
         supplier_priority_order: [],
         auto_fallback_enabled: true,
         supplier_response_timeout_minutes: 60,
+        has_cost_centers: true,
+        requires_purchase_order_number: false,
         driver_approval_configs: [],
         active: true,
         notes: ''
@@ -829,6 +840,15 @@ export default function GerenciarClientes() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => setAuditClient(client)}
+                              title="Gerar Link de Auditoria"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Link2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => handleOpenDialog(client)}
                               title="Editar Cliente"
                             >
@@ -853,6 +873,12 @@ export default function GerenciarClientes() {
             )}
           </CardContent>
         </Card>
+
+        <ClientAuditAccessDialog
+          client={auditClient}
+          open={!!auditClient}
+          onOpenChange={(open) => !open && setAuditClient(null)}
+        />
 
         {/* Dialog de Criação/Edição de Cliente */}
         <Dialog open={showDialog} onOpenChange={handleCloseDialog}>
@@ -1147,7 +1173,52 @@ export default function GerenciarClientes() {
                   )}
                 </div>
 
-                {/* Configurações de Pagamento e Operação */}
+                {/* Configuração de Centro de Custo */}
+                <div className="bg-teal-50 p-4 rounded-lg space-y-4 border-2 border-teal-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Receipt className="w-5 h-5 text-teal-700" />
+                    <h3 className="font-semibold text-teal-900">Centro de Custo</h3>
+                  </div>
+                  <p className="text-sm text-teal-800 mb-2">
+                    Define se este cliente utiliza centros de custo para rateio de despesas ao solicitar viagens.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="has_cost_centers"
+                      checked={formData.has_cost_centers !== false}
+                      onChange={(e) => setFormData({ ...formData, has_cost_centers: e.target.checked })}
+                      className="w-4 h-4 text-teal-600"
+                    />
+                    <Label htmlFor="has_cost_centers" className="cursor-pointer font-medium">
+                      Possui Centro de Custo?
+                    </Label>
+                  </div>
+                  <p className="text-xs text-teal-700 ml-7">
+                    {formData.has_cost_centers !== false
+                      ? '✅ Sim — O centro de custo será obrigatório ao solicitar viagens.'
+                      : '❌ Não — Viagens poderão ser solicitadas sem informar centro de custo.'}
+                  </p>
+
+                  <div className="flex items-center gap-3 mt-4 pt-4 border-t border-teal-200">
+                    <input
+                      type="checkbox"
+                      id="requires_purchase_order_number"
+                      checked={formData.requires_purchase_order_number === true}
+                      onChange={(e) => setFormData({ ...formData, requires_purchase_order_number: e.target.checked })}
+                      className="w-4 h-4 text-teal-600"
+                    />
+                    <Label htmlFor="requires_purchase_order_number" className="cursor-pointer font-medium">
+                      Exige Número de Ordem de Compra?
+                    </Label>
+                  </div>
+                  <p className="text-xs text-teal-700 ml-7">
+                    {formData.requires_purchase_order_number === true
+                      ? '✅ Sim — O número da OC será obrigatório ao selecionar "Ordem de Compra" como forma de faturamento.'
+                      : '❌ Não — O número da OC será opcional ao selecionar "Ordem de Compra".'}
+                  </p>
+                </div>
+
                 {/* Configurações de Aprovação de Motoristas - FLUXO CORPORATIVO */}
                 <div className="bg-indigo-50 p-4 rounded-lg space-y-4 border-2 border-indigo-200">
                   <div className="flex items-center gap-2 mb-2">

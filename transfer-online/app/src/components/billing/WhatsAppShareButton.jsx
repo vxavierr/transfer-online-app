@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { MessageCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { BrowserService } from '@/native';
 
 const formatPrice = (price) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price || 0);
@@ -50,7 +49,7 @@ export default function WhatsAppShareButton({ selectedRequests, filteredRequests
     lines.push(`📌 ${selected.length} viagem${selected.length !== 1 ? 'ns' : ''} selecionada${selected.length !== 1 ? 's' : ''}`);
 
     const message = encodeURIComponent(lines.join('\n'));
-    BrowserService.open(`https://wa.me/?text=${message}`, '_blank');
+    window.open(`https://wa.me/?text=${message}`, '_blank');
   };
 
   return (

@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { User, Mail, Phone, MessageSquare, CreditCard, AlertCircle, Loader2, Users, Ticket, Check, X, BellRing, Plus, Trash2 } from 'lucide-react';
 import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
+import PassengerNamesFields from '@/components/booking/PassengerNamesFields';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { base44 } from '@/api/base44Client';
@@ -46,11 +47,11 @@ function PaymentForm({ bookingId, onSuccess, onError, totalPrice }) {
       } else if (paymentIntent && paymentIntent.status === 'succeeded') {
         await base44.entities.Booking.update(bookingId, {
           payment_status: 'pago',
-          status: 'confirmada',
+          status: 'pendente',
           payment_intent_id: paymentIntent.id
         });
         setIsProcessing(false);
-        onSuccess();
+        onSuccess(paymentIntent.id);
       }
     } catch (err) {
       console.error("Erro ao confirmar pagamento:", err);
@@ -112,7 +113,8 @@ export default function BookingForm({
   driverLanguage = 'pt',
   onPaymentCompleted 
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const bookingLanguage = language === 'pt-BR' ? 'pt' : language;
   const [isBookingForOther, setIsBookingForOther] = useState(false);
   const [loggedUserData, setLoggedUserData] = useState({
     customer_name: '',
@@ -127,6 +129,7 @@ export default function BookingForm({
     passengers: 1,
     notes: ''
   });
+  const [additionalPassengerNames, setAdditionalPassengerNames] = useState([]);
 
   const [wantNotifications, setWantNotifications] = useState(false);
   const [notificationPhones, setNotificationPhones] = useState(['']);
@@ -157,7 +160,7 @@ export default function BookingForm({
           setStripePromise(loadStripe(key));
         }
       } catch (err) {
-        console.error('Failed to load Stripe key', err);
+        console.warn('[BookingForm] Falha ao carregar chave pública do Stripe:', err);
       }
     };
     initStripe();
@@ -197,6 +200,17 @@ export default function BookingForm({
     setAppliedCoupon(null);
     setCouponCode('');
   }, [selectedVehicle.calculated_price]);
+
+  useEffect(() => {
+    const passengerCount = Math.max(Number(formData.passengers) || 1, 1);
+    const additionalCount = Math.max(passengerCount - 1, 0);
+
+    setAdditionalPassengerNames((prev) => {
+      const next = prev.slice(0, additionalCount);
+      while (next.length < additionalCount) next.push('');
+      return next;
+    });
+  }, [formData.passengers]);
 
   const handleBookingForOtherChange = (checked) => {
     setIsBookingForOther(checked);
@@ -262,6 +276,27 @@ export default function BookingForm({
     setFinalPrice(priceBeforeCoupon);
   };
 
+  const buildPassengersDetails = (passengerCount) => {
+    return [
+      {
+        name: formData.customer_name?.trim() || '',
+        is_lead_passenger: true
+      },
+      ...additionalPassengerNames.slice(0, Math.max(passengerCount - 1, 0)).map((name) => ({
+        name: name.trim(),
+        is_lead_passenger: false
+      }))
+    ];
+  };
+
+  const handlePassengerNameChange = (index, value) => {
+    setAdditionalPassengerNames((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
   const handleAddNotificationPhone = () => {
     setNotificationPhones([...notificationPhones, '']);
   };
@@ -278,19 +313,27 @@ export default function BookingForm({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (formData.passengers < 1) {
+
+    const passengerCount = Math.max(Number(formData.passengers) || 0, 0);
+    const passengersDetails = buildPassengersDetails(passengerCount);
+
+    if (passengerCount < 1) {
       setErrorMessage(t('bookingForm.errPassengers'));
       return;
     }
 
-    if (formData.passengers > selectedVehicle.max_passengers) {
+    if (passengerCount > selectedVehicle.max_passengers) {
       setErrorMessage(t('bookingForm.errMaxPassengers').replace('{max}', selectedVehicle.max_passengers));
       return;
     }
 
+    if (passengersDetails.length !== passengerCount || passengersDetails.some((passenger) => !passenger.name)) {
+      setErrorMessage(t('bookingForm.errPassengerNames'));
+      return;
+    }
+
     if (!user) {
-      handleGuestCheckout();
+      handleGuestCheckout(passengerCount, passengersDetails);
       return;
     }
 
@@ -307,16 +350,18 @@ export default function BookingForm({
         vehicle_type_id: selectedVehicle.id,
         vehicle_type_name: selectedVehicle.name,
         driver_language: driverLanguage,
+        booking_language: bookingLanguage,
         origin: tripDetails.origin,
         destination: tripDetails.destination || tripDetails.origin,
         date: tripDetails.date,
         time: tripDetails.time,
         distance_km: parseFloat(distanceData?.distance_km || 0),
         duration_minutes: parseInt(distanceData?.duration_minutes || 0),
-        passengers: formData.passengers,
+        passengers: passengerCount,
         customer_name: formData.customer_name,
         customer_email: formData.customer_email,
         customer_phone: formData.customer_phone,
+        passengers_details: passengersDetails,
         is_booking_for_other: isBookingForOther,
         notes: formData.notes,
         price_before_coupon: priceBeforeCoupon,
@@ -399,7 +444,7 @@ export default function BookingForm({
     }
   };
 
-  const handleGuestCheckout = async () => {
+  const handleGuestCheckout = async (passengerCount, passengersDetails) => {
     setIsCreatingBooking(true);
     setErrorMessage('');
 
@@ -407,8 +452,13 @@ export default function BookingForm({
       const payload = {
         serviceType,
         vehicleTypeId: selectedVehicle.id,
+        vehicleTypeName: selectedVehicle.name,
+        priceFromFrontend: finalPrice,
+        calculationDetailsFromFrontend: selectedVehicle.calculation_details,
         formData: {
           ...formData,
+          passengers: passengerCount,
+          passengers_details: passengersDetails,
           origin_flight_number: tripDetails.origin_flight_number,
           destination_flight_number: tripDetails.destination_flight_number,
           return_origin_flight_number: tripDetails.return_origin_flight_number,
@@ -421,7 +471,8 @@ export default function BookingForm({
           return_time: tripDetails.return_time,
           hours: tripDetails.hours
         },
-        driverLanguage
+        driverLanguage,
+        bookingLanguage
       };
 
       const response = await base44.functions.invoke('createGuestBookingAndStripeCheckout', payload);
@@ -439,12 +490,14 @@ export default function BookingForm({
     }
   };
 
-  const handlePaymentSuccess = async () => {
+  const handlePaymentSuccess = async (paymentIntentId) => {
     try {
-      await sendBookingEmail({ bookingId: currentBookingId, recipientType: 'customer', emailType: 'confirmation' });
-      await sendBookingEmail({ bookingId: currentBookingId, recipientType: 'admin', emailType: 'new_booking_notification' });
-    } catch (emailError) {
-      console.error('Erro ao enviar e-mails:', emailError);
+      await base44.functions.invoke('processNovaReservaPaidBooking', {
+        bookingId: currentBookingId,
+        paymentIntentId
+      });
+    } catch (notificationError) {
+      console.error('Erro ao processar notificações da reserva:', notificationError);
     }
 
     if (onPaymentCompleted) {
@@ -665,6 +718,13 @@ export default function BookingForm({
                   {t('bookingForm.maxPassengers').replace('{max}', selectedVehicle.max_passengers)}
                 </p>
               </div>
+
+              <PassengerNamesFields
+                passengerCount={Math.max(Number(formData.passengers) || 1, 1)}
+                passengerNames={additionalPassengerNames}
+                onChange={handlePassengerNameChange}
+                t={t}
+              />
 
               <div className="space-y-1.5">
                 <Label htmlFor="notes" className="flex items-center gap-1.5 text-xs font-semibold text-gray-900">

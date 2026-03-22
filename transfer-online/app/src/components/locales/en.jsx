@@ -322,7 +322,12 @@ export default {
     "continueToPayment": "Continue to Payment",
     "selectVehiclePlaceholder": "Select a vehicle...",
     "passengers": "passengers",
-    "legPrice": "Price for this trip:"
+    "legPrice": "Price for this trip:",
+    "multiTripPricingInfoTitle": "How pricing works",
+    "multiTripPricingInfoDesc": "Each trip is priced individually, and the final itinerary total is the sum of all legs.",
+    "multiTripCalculationProgress": "{completed} of {total} trips priced",
+    "multiTripWaitingCalculation": "Waiting for this leg price calculation...",
+    "multiTripPaymentLocked": "Payment will be enabled when all trips have a calculated price."
   },
   bookingForm: {
     "title": "Booking Details",
@@ -384,6 +389,11 @@ export default {
     "emailLabel": "Email",
     "passengerEmailPlaceholder": "passenger@email.com",
     "yourEmailPlaceholder": "your@email.com",
-    "phonePlaceholder": "(00) 00000-0000"
+    "phonePlaceholder": "(00) 00000-0000",
+    "additionalPassengersTitle": "Other passengers",
+    "leadPassengerHelper": "Passenger 1 uses the name entered above.",
+    "passengerNameLabel": "Passenger {number} Name",
+    "passengerNamePlaceholder": "Enter passenger {number} name",
+    "errPassengerNames": "Fill in the name of all passengers"
   }
 };

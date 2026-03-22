@@ -61,7 +61,7 @@ export default function MinhasViagensProprias() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro auth:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FMinhasViagensProprias';
       }
     };
     checkAuth();

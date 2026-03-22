@@ -24,9 +24,23 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  ArrowUpCircle
+  ArrowUpCircle,
+  MoreHorizontal
 } from 'lucide-react';
 import StatusBadge from '@/components/ui/StatusBadge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import RequestSummaryTooltip from '@/components/supplier/RequestSummaryTooltip';
 
 export default function RequestTable({
   requests,
@@ -152,6 +166,7 @@ export default function RequestTable({
     rejectMutation.mutate(request);
   };
 
+
   const getUrgencyBadge = (request) => {
     if (request.type === 'direct_booking' && 
        (request.status === 'pendente' || request.status === 'confirmada') &&
@@ -174,6 +189,9 @@ export default function RequestTable({
     if (highlightNotStarted && tripDate && tripDate.getTime() === today.getTime() && request.driver_trip_status === 'aguardando' && request.driver_name && request.driver_phone && request.status !== 'concluida' && request.status !== 'cancelada') {
       return <Badge className="bg-amber-600 text-white text-[10px] md:text-xs">⏰ NÃO INICIOU</Badge>;
     }
+    if (request.unified_status === 'concluida' || request.status === 'concluida' || request.driver_trip_status === 'finalizada') {
+      return <Badge className="bg-green-600 text-white text-[10px] md:text-xs">✅ CONCLUÍDA</Badge>;
+    }
     return null;
   };
 
@@ -181,6 +199,63 @@ export default function RequestTable({
     if (request.type === 'own' || request.type === 'direct_booking') return true;
     return ['aceito', 'confirmado'].includes(request.supplier_response_status);
   };
+
+  const renderActionMenu = (request, isMobile = false) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={isMobile ? 'flex-1 text-xs h-8' : 'h-8 px-3'}
+        >
+          <MoreHorizontal className="w-4 h-4" />
+          {isMobile && 'Ações'}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={() => onViewDetails(request)}>
+          <Eye className="w-4 h-4 mr-2" />
+          Ver detalhes
+        </DropdownMenuItem>
+        {showActions && request.supplier_response_status === 'aguardando_resposta' && (
+          <>
+            <DropdownMenuItem onClick={() => handleAccept(request)}>
+              <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+              Aceitar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleReject(request)}>
+              <XCircle className="w-4 h-4 mr-2 text-red-600" />
+              Recusar
+            </DropdownMenuItem>
+          </>
+        )}
+        {showDriverAction && canManageDriver(request) && (
+          <DropdownMenuItem onClick={() => onManageDriver(request)}>
+            <Car className="w-4 h-4 mr-2 text-blue-600" />
+            Gerenciar motorista
+          </DropdownMenuItem>
+        )}
+        {showTripStatus && request.status !== 'concluida' && request.status !== 'cancelada' && request.driver_name && (
+          <DropdownMenuItem onClick={() => onStatusChange(request)}>
+            <ArrowUpCircle className="w-4 h-4 mr-2 text-orange-600" />
+            Mudar status
+          </DropdownMenuItem>
+        )}
+        {supplier?.features?.can_subcontract && ['aceito', 'confirmado', 'pendente', 'em_andamento', 'aguardando_resposta'].includes(request.unified_status || request.supplier_response_status) && (
+          <DropdownMenuItem onClick={() => onSubcontract(request)}>
+            <Users className="w-4 h-4 mr-2 text-purple-600" />
+            {request.subcontractor_id ? 'Alterar parceiro' : 'Subcontratar parceiro'}
+          </DropdownMenuItem>
+        )}
+        {request.subcontractor_id && !request.supplier_margin_on_subcontractor && request.subcontractor_cost && (
+          <DropdownMenuItem onClick={() => onApproveSubcontract(request)}>
+            <DollarSign className="w-4 h-4 mr-2 text-green-600" />
+            Aprovar cotação
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const getSortIcon = (column) => {
     if (sortColumn !== column) {
@@ -194,6 +269,22 @@ export default function RequestTable({
   const getVehicleTypeName = (vehicleTypeId) => {
     const vehicleType = supplierVehicleTypes.find(vt => vt.id === vehicleTypeId);
     return vehicleType?.name || '-';
+  };
+
+  const getTripTypeLabel = (request) => {
+    if (request.type === 'platform') return 'Corporativa';
+    if (request.type === 'own') return 'Própria';
+    if (request.type === 'direct_booking') return 'Particular';
+    if (request.type === 'event_trip') return 'Evento';
+    return '-';
+  };
+
+  const getTripTypeBadgeClass = (request) => {
+    if (request.type === 'platform') return 'bg-blue-100 text-blue-800 border-blue-200';
+    if (request.type === 'own') return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+    if (request.type === 'direct_booking') return 'bg-orange-100 text-orange-800 border-orange-200';
+    if (request.type === 'event_trip') return 'bg-purple-100 text-purple-800 border-purple-200';
+    return 'bg-gray-100 text-gray-700 border-gray-200';
   };
 
   if (requests.length === 0) {
@@ -257,6 +348,16 @@ export default function RequestTable({
                     <div className="text-gray-500 truncate">→ {request.destination}</div>
                   </div>
 
+                  <div className="grid grid-cols-1 gap-1 text-xs">
+                    <div><span className="text-gray-500">Passageiro:</span> <span className="font-medium text-gray-900">{request.passenger_name || '-'}</span></div>
+                    <div><span className="text-gray-500">Cliente:</span> <span className="font-medium text-gray-900">{request.client_name_display || '-'}</span></div>
+                    <div>
+                      <Badge className={`${getTripTypeBadgeClass(request)} text-[10px]`}>
+                        {getTripTypeLabel(request)}
+                      </Badge>
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between text-xs">
                     <div>
                       <div className="font-semibold">{parseLocalDate(request.date).toLocaleDateString('pt-BR')}</div>
@@ -276,89 +377,7 @@ export default function RequestTable({
                   )}
 
                   <div className="flex flex-wrap gap-1 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onViewDetails(request)}
-                      className="flex-1 text-xs h-8"
-                    >
-                      <Eye className="w-3 h-3 mr-1" />
-                      Ver
-                    </Button>
-                    {showActions && request.supplier_response_status === 'aguardando_resposta' && (
-                      <>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAccept(request)}
-                          disabled={acceptMutation.isPending || rejectMutation.isPending}
-                          className="flex-1 text-xs h-8 bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                        >
-                          {acceptMutation.isPending && acceptMutation.variables?.id === request.id ? (
-                            <span className="animate-spin mr-1">⌛</span>
-                          ) : (
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                          )}
-                          Aceitar
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleReject(request)}
-                          disabled={acceptMutation.isPending || rejectMutation.isPending}
-                          variant="destructive"
-                          className="flex-1 text-xs h-8 disabled:opacity-50"
-                        >
-                          {rejectMutation.isPending && rejectMutation.variables?.id === request.id ? (
-                            <span className="animate-spin mr-1">⌛</span>
-                          ) : (
-                            <XCircle className="w-3 h-3 mr-1" />
-                          )}
-                          Recusar
-                        </Button>
-                      </>
-                    )}
-                    {showDriverAction && canManageDriver(request) && (
-                      <Button
-                        size="sm"
-                        onClick={() => onManageDriver(request)}
-                        className="flex-1 text-xs h-8 bg-blue-600 hover:bg-blue-700"
-                      >
-                        <Car className="w-3 h-3 mr-1" />
-                        Motorista
-                      </Button>
-                    )}
-                    {showTripStatus && request.status !== 'concluida' && request.status !== 'cancelada' && request.driver_name && (
-                        <Button
-                            size="sm"
-                            onClick={() => onStatusChange(request)}
-                            className="flex-1 text-xs h-8 bg-orange-600 hover:bg-orange-700"
-                            title="Mudar Status da Viagem"
-                        >
-                            <ArrowUpCircle className="w-3 h-3 mr-1" />
-                            Status
-                        </Button>
-                    )}
-                    {supplier?.features?.can_subcontract && ['aceito', 'confirmado', 'pendente', 'em_andamento', 'aguardando_resposta'].includes(request.unified_status || request.supplier_response_status) && (
-                        <Button
-                            size="sm"
-                            onClick={() => onSubcontract(request)}
-                            className="flex-1 text-xs h-8 bg-purple-600 hover:bg-purple-700"
-                            title="Subcontratar Parceiro"
-                        >
-                            <Users className="w-3 h-3 mr-1" />
-                            {request.subcontractor_id ? 'Parceiro' : 'Parceiro'}
-                        </Button>
-                    )}
-                    {request.subcontractor_id && !request.supplier_margin_on_subcontractor && request.subcontractor_cost && (
-                        <Button
-                            size="sm"
-                            onClick={() => onApproveSubcontract(request)}
-                            className="flex-1 text-xs h-8 bg-green-600 hover:bg-green-700 animate-pulse"
-                            title="Aprovar Cotação do Parceiro"
-                        >
-                            <DollarSign className="w-3 h-3 mr-1" />
-                            Aprovar
-                        </Button>
-                    )}
+                    {renderActionMenu(request, true)}
                     {request.subcontractor_id && !request.subcontractor_cost && (
                         <Badge className="bg-purple-100 text-purple-800 text-[10px] h-8 flex items-center justify-center">
                             Aguardando Parceiro
@@ -372,8 +391,9 @@ export default function RequestTable({
         })}
       </div>
 
-      <div className="hidden md:block rounded-lg border bg-white overflow-hidden">
-        <Table>
+      <TooltipProvider>
+        <div className="hidden md:block rounded-lg border bg-white overflow-hidden">
+          <Table className="min-w-[1180px]">
           <TableHeader>
             <TableRow className="bg-gray-50">
               {onSelectionChange && (
@@ -397,7 +417,7 @@ export default function RequestTable({
                 </TableHead>
               )}
               {showUrgencyIndicator && <TableHead className="font-semibold">Urgência</TableHead>}
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[88px]">
                 <button
                   onClick={() => onSort('request_number')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -406,7 +426,34 @@ export default function RequestTable({
                   {getSortIcon('request_number')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[150px]">
+                <button
+                  onClick={() => onSort('passenger_name')}
+                  className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                >
+                  Passageiro
+                  {getSortIcon('passenger_name')}
+                </button>
+              </TableHead>
+              <TableHead className="font-semibold px-2 w-[155px]">
+                <button
+                  onClick={() => onSort('client_name_display')}
+                  className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                >
+                  Cliente
+                  {getSortIcon('client_name_display')}
+                </button>
+              </TableHead>
+              <TableHead className="font-semibold px-2 w-[95px]">
+                <button
+                  onClick={() => onSort('trip_type')}
+                  className="flex items-center gap-1 hover:text-blue-600 transition-colors"
+                >
+                  Tipo
+                  {getSortIcon('trip_type')}
+                </button>
+              </TableHead>
+              <TableHead className="font-semibold px-2 w-[260px]">
                 <button
                   onClick={() => onSort('origin')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -415,7 +462,7 @@ export default function RequestTable({
                   {getSortIcon('origin')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[110px]">
                 <button
                   onClick={() => onSort('date_time')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -424,7 +471,7 @@ export default function RequestTable({
                   {getSortIcon('date_time')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[56px] text-center">
                 <button
                   onClick={() => onSort('passengers')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -433,7 +480,7 @@ export default function RequestTable({
                   {getSortIcon('passengers')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[92px]">
                 <button
                   onClick={() => onSort('chosen_supplier_cost')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -442,7 +489,7 @@ export default function RequestTable({
                   {getSortIcon('chosen_supplier_cost')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[98px] sticky right-[210px] z-20 bg-gray-50 shadow-[-1px_0_0_0_rgba(229,231,235,1)]">
                 <button
                   onClick={() => onSort('supplier_response_status')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -451,7 +498,7 @@ export default function RequestTable({
                   {getSortIcon('supplier_response_status')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">
+              <TableHead className="font-semibold px-2 w-[92px] sticky right-[118px] z-20 bg-gray-50 shadow-[-1px_0_0_0_rgba(229,231,235,1)]">
                 <button
                   onClick={() => onSort('chosen_vehicle_type_name')}
                   className="flex items-center gap-1 hover:text-blue-600 transition-colors"
@@ -460,7 +507,7 @@ export default function RequestTable({
                   {getSortIcon('chosen_vehicle_type_name')}
                 </button>
               </TableHead>
-              <TableHead className="font-semibold px-2">Ações</TableHead>
+              <TableHead className="font-semibold px-2 w-[104px] sticky right-0 z-20 bg-gray-50 shadow-[-1px_0_0_0_rgba(229,231,235,1)]">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -484,10 +531,11 @@ export default function RequestTable({
               }
 
               return (
-                <TableRow
-                  key={request.id}
-                  className={rowClasses}
-                >
+                <Tooltip key={request.id}>
+                  <TooltipTrigger asChild>
+                    <TableRow
+                      className={`${rowClasses} cursor-help`}
+                    >
                   {onSelectionChange && (
                     <TableCell>
                       <Checkbox 
@@ -505,26 +553,26 @@ export default function RequestTable({
                     </TableCell>
                   )}
                   <TableCell className="px-2">
-                    <div className="flex flex-col">
-                      <div className="font-mono font-semibold text-blue-600 text-xs md:text-sm">
-                        {request.request_number}
-                      </div>
-                      {request.type === 'own' ? (
-                        <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px] w-fit mt-1 px-1 py-0">
-                          Própria
-                        </Badge>
-                      ) : request.type === 'direct_booking' ? (
-                        <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-[10px] w-fit mt-1 px-1 py-0">
-                          Particular
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-[10px] w-fit mt-1 px-1 py-0">
-                          Plataforma
-                        </Badge>
-                      )}
+                    <div className="font-mono font-semibold text-blue-600 text-xs md:text-sm">
+                      {request.request_number}
                     </div>
                   </TableCell>
-                  <TableCell className="max-w-[250px] px-2">
+                  <TableCell className="px-2 w-[150px] max-w-[150px]">
+                    <div className="text-xs md:text-sm font-medium text-gray-900 truncate" title={request.passenger_name || '-'}>
+                      {request.passenger_name || '-'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-2 w-[155px] max-w-[155px]">
+                    <div className="text-xs md:text-sm text-gray-700 truncate" title={request.client_name_display || '-'}>
+                      {request.client_name_display || '-'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-2">
+                    <Badge className={`${getTripTypeBadgeClass(request)} text-[10px] md:text-xs border`}>
+                      {getTripTypeLabel(request)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="w-[260px] max-w-[260px] px-2">
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-1 text-xs md:text-sm" title={request.origin}>
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
@@ -539,19 +587,19 @@ export default function RequestTable({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2">
-                    <div className="text-xs md:text-sm">
+                  <TableCell className="px-2 w-[110px]">
+                    <div className="text-xs md:text-sm whitespace-nowrap">
                       <div className="font-bold">{parseLocalDate(request.date).toLocaleDateString('pt-BR')}</div>
                       <div className="text-gray-500">{request.time}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-center px-2">{request.passengers}</TableCell>
-                  <TableCell className="px-2">
-                    <div className="font-semibold text-green-600 text-xs md:text-sm">
+                  <TableCell className="text-center px-2 w-[56px]">{request.passengers}</TableCell>
+                  <TableCell className="px-2 w-[92px]">
+                    <div className="font-semibold text-green-600 text-xs md:text-sm whitespace-nowrap">
                       {formatPrice(request.value_display)}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2">
+                  <TableCell className="px-2 w-[98px] sticky right-[210px] z-10 bg-white shadow-[-1px_0_0_0_rgba(229,231,235,1)]">
                     <div className="scale-90 origin-left">
                     {request.driver_name ? (
                       <StatusBadge status={request.driver_trip_status || request.driver_current_status || 'aguardando'} type="trip" />
@@ -566,108 +614,31 @@ export default function RequestTable({
                     )}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2">
-                    <div className="text-xs md:text-sm text-gray-700 truncate max-w-[100px]" title={getVehicleTypeName(request.chosen_vehicle_type_id)}>
+                  <TableCell className="px-2 w-[92px] sticky right-[118px] z-10 bg-white shadow-[-1px_0_0_0_rgba(229,231,235,1)]">
+                    <div className="text-xs md:text-sm text-gray-700 truncate max-w-[88px]" title={getVehicleTypeName(request.chosen_vehicle_type_id)}>
                       {getVehicleTypeName(request.chosen_vehicle_type_id)}
                     </div>
                   </TableCell>
-                  <TableCell className="px-2">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onViewDetails(request)}
-                        title="Ver detalhes"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      {showActions && request.supplier_response_status === 'aguardando_resposta' && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleAccept(request)}
-                            disabled={acceptMutation.isPending || rejectMutation.isPending}
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50 disabled:opacity-50"
-                            title="Aceitar"
-                          >
-                            {acceptMutation.isPending && acceptMutation.variables?.id === request.id ? (
-                                <span className="animate-spin">⌛</span>
-                            ) : (
-                                <CheckCircle className="w-4 h-4" />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReject(request)}
-                            disabled={acceptMutation.isPending || rejectMutation.isPending}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50"
-                            title="Recusar"
-                          >
-                            {rejectMutation.isPending && rejectMutation.variables?.id === request.id ? (
-                                <span className="animate-spin">⌛</span>
-                            ) : (
-                                <XCircle className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </>
-                      )}
-                      {showDriverAction && canManageDriver(request) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onManageDriver(request)}
-                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          title="Gerenciar Motorista"
-                        >
-                          <Car className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {showTripStatus && request.status !== 'concluida' && request.status !== 'cancelada' && request.driver_name && (
-                          <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onStatusChange(request)}
-                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                              title="Mudar Status da Viagem"
-                          >
-                              <ArrowUpCircle className="w-4 h-4" />
-                          </Button>
-                      )}
-                      {supplier?.features?.can_subcontract && ['aceito', 'confirmado', 'pendente', 'em_andamento', 'aguardando_resposta'].includes(request.unified_status || request.supplier_response_status) && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onSubcontract(request)}
-                            className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-                            title={request.subcontractor_id ? "Alterar Parceiro" : "Subcontratar Parceiro"}
-                        >
-                            <Users className="w-4 h-4" />
-                        </Button>
-                      )}
-                      {request.subcontractor_id && !request.supplier_margin_on_subcontractor && request.subcontractor_cost && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => onApproveSubcontract(request)}
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50 animate-pulse"
-                            title="Aprovar Cotação"
-                        >
-                            <DollarSign className="w-4 h-4" />
-                        </Button>
-                      )}
+                  <TableCell className="px-2 w-[104px] sticky right-0 z-10 bg-white shadow-[-1px_0_0_0_rgba(229,231,235,1)]">
+                     <div className="flex items-center justify-end gap-1">
                       {request.subcontractor_id && !request.subcontractor_cost && (
                          <span title="Aguardando Parceiro" className="text-purple-400 cursor-help"><Users className="w-4 h-4" /></span>
                       )}
-                    </div>
+                      {renderActionMenu(request)}
+                      </div>
                   </TableCell>
-                </TableRow>
+                    </TableRow>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="bg-white p-4 rounded-lg shadow-xl border border-gray-200 max-w-sm z-50">
+                    <RequestSummaryTooltip request={request} />
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
           </TableBody>
-        </Table>
-      </div>
+          </Table>
+        </div>
+      </TooltipProvider>
     </>
   );
 }

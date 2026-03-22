@@ -61,6 +61,9 @@ export default function ServiceOrderPDFDialog({ serviceRequest, open, onClose })
             <FileText className="w-5 h-5 text-blue-600" />
             Exportar Ordem de Serviço
           </DialogTitle>
+          <DialogDescription>
+            Gere o PDF da ordem de serviço no idioma selecionado.
+          </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4 py-4">

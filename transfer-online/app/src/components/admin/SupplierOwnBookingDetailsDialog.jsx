@@ -177,7 +177,7 @@ export default function SupplierOwnBookingDetailsDialog({ booking, open, onClose
     setRatingSuccess('');
 
     try {
-      const response = await base44.functions.invoke('adminManualSendRating', {
+      const response = await base44.functions.invoke('generateAndSendRatingLink', {
         serviceRequestId: booking.id
       });
 

@@ -37,6 +37,7 @@ import StatCard from '@/components/dashboard/StatCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import DashboardGrid from '@/components/dashboard/DashboardGrid';
 import SystemHealthAlert from '@/components/admin/SystemHealthAlert';
+import PendingTripCard from '@/components/admin/PendingTripCard';
 const EditTripDialog = React.lazy(() => import('../components/event/EditTripDialog'));
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createPageUrl } from '@/utils';
@@ -91,7 +92,7 @@ export default function AdminDashboard() {
         setUser(currentUser);
         setIsCheckingAuth(false);
       } catch (error) {
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FAdminDashboard';
       }
     };
 
@@ -115,24 +116,8 @@ export default function AdminDashboard() {
     }
   }, [isCheckingAuth, user]);
 
-  // Heartbeat: Verifica lembretes automaticamente a cada 10 minutos enquanto o admin está online
-  useEffect(() => {
-    if (!isCheckingAuth && user?.role === 'admin') {
-      // Executar imediatamente ao carregar
-      base44.functions.invoke('checkDriverReminders')
-        .then(() => console.log('[System] Verificação de lembretes executada'))
-        .catch(err => console.error('[System] Erro na verificação automática:', err));
+  // Os lembretes automáticos já rodam no backend; evitamos disparo redundante no painel admin.
 
-      // Configurar intervalo de 10 minutos (600000 ms)
-      const interval = setInterval(() => {
-        base44.functions.invoke('checkDriverReminders')
-          .then(() => console.log('[System] Verificação de lembretes executada (intervalo)'))
-          .catch(err => console.error('[System] Erro na verificação automática:', err));
-      }, 10 * 60 * 1000);
-
-      return () => clearInterval(interval);
-    }
-  }, [isCheckingAuth, user]);
 
   const { data: bookings, isLoading } = useQuery({
     queryKey: ['bookings'],
@@ -287,6 +272,10 @@ export default function AdminDashboard() {
 
     return matchesSearch && matchesStatus;
   });
+
+  const pendingNovaReservaBookings = React.useMemo(() => {
+    return bookings.filter((booking) => booking.payment_status === 'pago' && booking.status === 'pendente');
+  }, [bookings]);
 
   // Normalizar e unificar todas as viagens
   const allTrips = React.useMemo(() => {
@@ -858,59 +847,81 @@ export default function AdminDashboard() {
         )}
 
         {/* Card de Solicitações Aguardando Aceite - FILTRADAS */}
-        {filteredServiceRequests.filter(sr => ['aguardando_resposta', 'aguardando_fornecedor'].includes(sr.supplier_response_status)).length > 0 && (
+        {(filteredServiceRequests.filter(sr => ['aguardando_resposta', 'aguardando_fornecedor'].includes(sr.supplier_response_status)).length > 0 || pendingNovaReservaBookings.length > 0) && (
           <div className="mb-8">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="w-5 h-5 text-amber-600" />
-                  Solicitações Aguardando Aceite ({filteredServiceRequests.filter(sr => ['aguardando_resposta', 'aguardando_fornecedor'].includes(sr.supplier_response_status)).length})
+                  Viagens Aguardando Aceite ({filteredServiceRequests.filter(sr => ['aguardando_resposta', 'aguardando_fornecedor'].includes(sr.supplier_response_status)).length + pendingNovaReservaBookings.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {pendingNovaReservaBookings.slice(0, 5).map((booking) => (
+                    <PendingTripCard
+                      key={booking.id}
+                      code={booking.booking_number}
+                      badgeLabel="NovaReserva Paga"
+                      badgeClassName="bg-yellow-100 text-yellow-800"
+                      subtitle="Cliente Particular"
+                      passengerName={booking.customer_name}
+                      date={booking.date}
+                      time={booking.time}
+                      route={`${booking.origin} → ${booking.destination}`}
+                      detailsLabel="Ver Detalhes"
+                      acceptLabel="Aceitar Viagem"
+                      onViewDetails={() => setSelectedBooking(booking)}
+                      onAccept={() => setAcceptingTrip({
+                        id: booking.id,
+                        type: 'booking',
+                        display_id: booking.booking_number,
+                        passenger_name: booking.customer_name,
+                        origin: booking.origin,
+                        destination: booking.destination,
+                        date: booking.date,
+                        time: booking.time,
+                        price: booking.total_price,
+                        original_data: booking,
+                      })}
+                    />
+                  ))}
+
                   {filteredServiceRequests
                     .filter(sr => ['aguardando_resposta', 'aguardando_fornecedor'].includes(sr.supplier_response_status))
                     .slice(0, 5)
                     .map((request) => {
                       const supplier = suppliers.find(s => s.id === request.chosen_supplier_id);
                       return (
-                        <div key={request.id} className="border rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-slate-800 dark:border-slate-700 transition-colors">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <span className="font-bold text-lg text-blue-600">{request.request_number}</span>
-                              <Badge className="ml-3 bg-amber-100 text-amber-800">
-                                {request.supplier_response_status === 'aguardando_resposta' ? 'Aguardando Resposta' : 'Aguardando Fornecedor'}
-                              </Badge>
-                              {supplier && (
-                                <span className="ml-2 text-sm text-gray-600">• {supplier.name}</span>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => {
-                                setEditingServiceRequest(request);
-                                setShowEditServiceRequestDialog(true);
-                              }}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-                            >
-                              Editar / Ver Detalhes
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <span className="text-gray-600">Passageiro:</span>
-                              <span className="ml-2 font-medium">{request.passenger_name}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-600">Data:</span>
-                              <span className="ml-2 font-medium">{request.date} às {request.time}</span>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-gray-600">Rota:</span>
-                              <span className="ml-2 font-medium">{request.origin} → {request.destination}</span>
-                            </div>
-                          </div>
-                        </div>
+                        <PendingTripCard
+                          key={request.id}
+                          code={request.request_number}
+                          badgeLabel={request.supplier_response_status === 'aguardando_resposta' ? 'Aguardando Resposta' : 'Aguardando Fornecedor'}
+                          badgeClassName="bg-amber-100 text-amber-800"
+                          subtitle={supplier?.name}
+                          passengerName={request.passenger_name}
+                          date={request.date}
+                          time={request.time}
+                          route={`${request.origin} → ${request.destination}`}
+                          detailsLabel="Ver Detalhes"
+                          acceptLabel="Aceitar Viagem"
+                          onViewDetails={() => {
+                            setEditingServiceRequest(request);
+                            setShowEditServiceRequestDialog(true);
+                          }}
+                          onAccept={() => setAcceptingTrip({
+                            id: request.id,
+                            type: 'service_request',
+                            display_id: request.request_number,
+                            passenger_name: request.passenger_name,
+                            origin: request.origin,
+                            destination: request.destination,
+                            date: request.date,
+                            time: request.time,
+                            price: request.chosen_client_price || request.chosen_supplier_cost || request.final_client_price_with_additions || 0,
+                            original_data: request,
+                          })}
+                        />
                       );
                     })}
                 </div>

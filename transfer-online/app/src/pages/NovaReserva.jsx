@@ -110,13 +110,18 @@ export default function NovaReserva({ isEmbedded }) {
   const { data: publicConfig, isLoading: isLoadingPublicConfig } = useQuery({
     queryKey: ['publicConfig'],
     queryFn: async () => {
-      const response = await base44.functions.invoke('getPublicConfig');
-      return response.data || {};
+      try {
+        const response = await base44.functions.invoke('getPublicConfig');
+        return response.data || {};
+      } catch (error) {
+        console.warn('[NovaReserva] Falha ao carregar configuração pública:', error);
+        return {};
+      }
     },
     staleTime: 300000,
   });
 
-  const canViewPricesWithoutLogin = publicConfig?.publicPricing?.enabled || false;
+  const canViewPricesWithoutLogin = publicConfig?.publicPricing?.enabled ?? true;
 
   const { data: seasonalThemeData } = useQuery({
     queryKey: ['seasonalTheme'],
@@ -132,14 +137,7 @@ export default function NovaReserva({ isEmbedded }) {
     staleTime: 60 * 60 * 1000
   });
 
-  const { data: airportKeywordsConfig } = useQuery({
-    queryKey: ['airportKeywords'],
-    queryFn: async () => {
-      const configs = await base44.entities.AppConfig.filter({ config_key: 'airport_keywords' });
-      return configs.length > 0 ? configs[0].config_value : null;
-    },
-    staleTime: 300000,
-  });
+  const airportKeywordsConfig = publicConfig?.airportKeywords || null;
 
   const themeStyle = useMemo(() => {
     if (!seasonalThemeData) return {};
@@ -163,23 +161,10 @@ export default function NovaReserva({ isEmbedded }) {
       : "min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-3 md:p-4 pb-24");
 
   const { data: vehicleTypes = [], isLoading: isLoadingVehicleTypes, isError: isVehicleError, error: vehicleError, refetch: refetchVehicleTypes } = useQuery({
-    queryKey: ['vehicleTypes'],
+    queryKey: ['publicVehicleTypes'],
     queryFn: async () => {
-      try {
-        const vehicles = await base44.entities.VehicleType.filter({ active: true });
-        return Array.isArray(vehicles) ? vehicles.sort((a, b) => (a.display_order || 0) - (b.display_order || 0)) : [];
-      } catch (error) {
-        console.error("Error fetching vehicle types:", error);
-        try {
-          const allVehicles = await base44.entities.VehicleType.list();
-          return Array.isArray(allVehicles) 
-            ? allVehicles.filter(v => v.active !== false).sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-            : [];
-        } catch (retryError) {
-          console.error("Retry failed:", retryError);
-          throw error;
-        }
-      }
+      const response = await base44.functions.invoke('getPublicConfig');
+      return Array.isArray(response.data?.vehicleTypes) ? response.data.vehicleTypes : [];
     },
     staleTime: 60000,
     retry: 2,
@@ -396,8 +381,8 @@ export default function NovaReserva({ isEmbedded }) {
           isCustomHours, timestamp: Date.now(), requestingQuote: true
         };
         localStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-        const targetUrl = window.location.origin + '/NovaReserva?from_booking=true';
-        base44.auth.redirectToLogin(targetUrl);
+        const targetUrl = '/NovaReserva?from_booking=true';
+        window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(targetUrl)}`;
       } else {
         alert('Erro ao solicitar cotação. Verifique o console para mais detalhes ou tente novamente.');
       }
@@ -742,6 +727,9 @@ export default function NovaReserva({ isEmbedded }) {
       
       // Validação detalhada de cada perna
       console.log('[NovaReserva] Validating multiTripLegs:', multiTripLegs);
+      const now = new Date();
+      const MIN_LEAD_TIME_HOURS = 48; // Prazo mínimo padrão para múltiplas viagens
+      
       for (let i = 0; i < multiTripLegs.length; i++) {
         const leg = multiTripLegs[i];
         const legNum = i + 1;
@@ -762,6 +750,22 @@ export default function NovaReserva({ isEmbedded }) {
           setDistanceError(`Viagem ${legNum}: Selecione o horário`);
           return;
         }
+        
+        // Validação de prazo mínimo (48 horas)
+        const legDateTime = new Date(`${leg.date}T${leg.time}`);
+        if (isNaN(legDateTime.getTime())) {
+          setDistanceError(`Viagem ${legNum}: Data ou horário inválidos`);
+          return;
+        }
+        
+        const diffMs = legDateTime.getTime() - now.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+        
+        if (diffHours < MIN_LEAD_TIME_HOURS) {
+          setDistanceError(`The selected date and time do not meet the minimum lead time of ${MIN_LEAD_TIME_HOURS} hours. Please choose a later date/time.`);
+          return;
+        }
+        
         if (!leg.vehicleTypeId) {
           setDistanceError(`Viagem ${legNum}: Selecione um veículo`);
           return;
@@ -885,20 +889,21 @@ export default function NovaReserva({ isEmbedded }) {
         }
       } catch (error) {
         console.error('[NovaReserva] Erro ao calcular distância:', error);
-        let errorMessage = nr('errRouteCalculation');
+
         if (error.response?.status === 404) {
-          errorMessage = nr('errRouteNotFound');
-        } else if (error.response?.data?.error) {
-          errorMessage = error.response.data.error;
-        } else if (error.message) {
-          errorMessage = error.message;
+          setDistanceError(nr('errRouteNotFound'));
+          setIsCalculatingDistance(false);
+          return;
         }
-        if (errorMessage === 'Network Error') {
-          errorMessage = nr('errConnectionError');
+
+        if (error.response?.status && error.response.status < 500 && error.response?.data?.error) {
+          setDistanceError(error.response.data.error);
+          setIsCalculatingDistance(false);
+          return;
         }
-        setDistanceError(errorMessage);
-        setIsCalculatingDistance(false);
-        return;
+
+        console.warn('[NovaReserva] Continuando sem distância calculada devido a falha temporária.');
+        calculatedDistance = null;
       }
     } else {
       calculatedDistance = null;
@@ -933,8 +938,8 @@ export default function NovaReserva({ isEmbedded }) {
         isCustomHours, timestamp: Date.now()
       };
       localStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-      const currentUrl = window.location.pathname + '?from_booking=true';
-      base44.auth.redirectToLogin(currentUrl);
+      const currentUrl = '/NovaReserva?from_booking=true';
+      window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(currentUrl)}`;
       return;
     }
 
@@ -1000,8 +1005,8 @@ export default function NovaReserva({ isEmbedded }) {
           isCustomHours, timestamp: Date.now() 
         };
         localStorage.setItem(BOOKING_STATE_KEY, JSON.stringify(stateToSave));
-        const targetUrl = window.location.origin + '/NovaReserva?from_booking=true';
-        base44.auth.redirectToLogin(targetUrl);
+        const targetUrl = '/NovaReserva?from_booking=true';
+        window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent(targetUrl)}`;
       } else {
         console.error("Erro ao selecionar veículo:", error);
         toast.error(nr('errProcessingSelection'));
@@ -1045,6 +1050,22 @@ export default function NovaReserva({ isEmbedded }) {
   const destinationIsAirport = useMemo(() => destinationLocationType === 'airport' || isAirport(formData.destination), [formData.destination, destinationLocationType, isAirport]);
   const returnOriginIsAirport = useMemo(() => serviceType === 'round_trip' && (destinationLocationType === 'airport' || isAirport(formData.destination)), [serviceType, formData.destination, destinationLocationType, isAirport]); 
   const returnDestinationIsAirport = useMemo(() => serviceType === 'round_trip' && (originLocationType === 'airport' || isAirport(formData.origin)), [serviceType, formData.origin, originLocationType, isAirport]);
+  const multiTripPaymentReady = useMemo(() => {
+    if (serviceType !== 'multi_trip') return true;
+
+    const hasValidContact = formData.phone?.trim()?.length >= 10 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email || '');
+    const hasLegs = multiTripLegs.length > 0;
+    const allLegsReady = multiTripLegs.every((leg) => (
+      leg.origin &&
+      leg.destination &&
+      leg.date &&
+      leg.time &&
+      leg.vehicleTypeId &&
+      Number(leg.calculatedPrice) > 0
+    ));
+
+    return hasValidContact && hasLegs && allLegsReady;
+  }, [serviceType, formData.email, formData.phone, multiTripLegs]);
 
   if (isVehicleError) {
     return (
@@ -1181,76 +1202,45 @@ export default function NovaReserva({ isEmbedded }) {
         {!isEmbedded && (
         <div className="bg-white rounded-xl shadow-md p-3 md:p-4 mb-4">
           <div className="flex items-center justify-between gap-2">
-            {user ? (
-              <>
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-white font-semibold text-sm">
-                      {user.full_name?.[0]?.toUpperCase() || 'U'}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] text-gray-500 leading-tight">{nr('hello')}</p>
-                    <p className="font-bold text-sm text-gray-900 truncate">{user.full_name}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Suspense fallback={null}>
-                    <LanguageSelector />
-                  </Suspense>
-                  <DropdownMenu open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg border-gray-300">
-                        <ChevronDown className="w-5 h-5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      {userMenuItems.map((item) => {
-                        const Icon = item.icon;
-                        return (
-                          <DropdownMenuItem key={item.title} asChild>
-                            <Link to={item.url} className="flex items-center gap-2 cursor-pointer">
-                              <Icon className="w-4 h-4" />
-                              <span>{item.title}</span>
-                            </Link>
-                          </DropdownMenuItem>
-                        );
-                      })}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => base44.auth.logout()} className="text-red-600 focus:text-red-600 focus:bg-red-50">
-                        <LogOut className="w-4 h-4 mr-2" />
-                        {t('common.logout')}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="w-9 h-9 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="w-5 h-5 text-white" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-sm text-gray-900 leading-tight">{nr('myAccount')}</p>
-                    <p className="text-[10px] text-gray-500 truncate">{nr('loginSignup')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Suspense fallback={null}>
-                    <LanguageSelector />
-                  </Suspense>
-                  <Button
-                    onClick={() => base44.auth.redirectToLogin()}
-                    size="sm"
-                    className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-3 py-2 h-9 rounded-lg shadow-md font-semibold text-xs"
-                  >
-                    <LogIn className="w-4 h-4 md:mr-1.5" />
-                    <span className="hidden md:inline">Login</span>
-                  </Button>
-                </div>
-              </>
-            )}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden shadow-sm flex-shrink-0">
+                <img 
+                  src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68effdb75fcac474f3f66b8f/57204d3c2_logo-icone.jpg" 
+                  alt="TransferOnline Logo" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <h1 className="font-bold text-base text-gray-900 leading-tight">TransferOnline</h1>
+                <p className="text-[10px] text-gray-500 truncate">Transporte Executivo</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Suspense fallback={null}>
+                <LanguageSelector compact />
+              </Suspense>
+              {user ? (
+                <Button
+                  onClick={() => { localStorage.removeItem('base44_access_token'); localStorage.removeItem('token'); localStorage.removeItem('access_token'); window.location.href = '/AccessPortal'; }}
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-lg text-gray-600 hover:text-red-600 hover:bg-red-50"
+                  title="Sair"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => window.location.href = `/AccessPortal?returnUrl=${encodeURIComponent('/NovaReserva')}`}
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 rounded-lg text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                  title="Login"
+                >
+                  <LogIn className="w-5 h-5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
         )}
@@ -1355,8 +1345,8 @@ export default function NovaReserva({ isEmbedded }) {
               <div className="mt-6">
                 <Button
                   onClick={handleCalculateAndContinue}
-                  disabled={isCalculatingDistance}
-                  className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg shadow-md"
+                  disabled={isCalculatingDistance || (serviceType === 'multi_trip' && !multiTripPaymentReady)}
+                  className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isCalculatingDistance ? (
                     <>
@@ -1370,6 +1360,11 @@ export default function NovaReserva({ isEmbedded }) {
                     </>
                   )}
                 </Button>
+                {serviceType === 'multi_trip' && !multiTripPaymentReady && (
+                  <p className="mt-2 text-xs text-amber-700 text-center font-medium">
+                    {nr('multiTripPaymentLocked')}
+                  </p>
+                )}
               </div>
             </div>
           </>

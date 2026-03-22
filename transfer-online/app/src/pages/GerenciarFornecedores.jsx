@@ -86,7 +86,7 @@ export default function GerenciarFornecedores() {
         setIsCheckingAuth(false);
       } catch (error) {
         console.error('Erro ao verificar autenticação:', error);
-        base44.auth.redirectToLogin();
+        window.location.href = '/AccessPortal?returnUrl=%2FGerenciarFornecedores';
       }
     };
 

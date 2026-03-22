@@ -124,10 +124,25 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
     }
   };
 
-  // Background tracking é gerenciado pelo GeoService via @capacitor-community/background-geolocation
-  // O plugin já cria uma notificação foreground automaticamente no Android
+  // Helper to bridge with Native Foreground Service
   const toggleNativeForegroundService = (isActive) => {
-    console.log('[Telemetry] Background tracking:', isActive ? 'active' : 'inactive');
+    console.log('[Telemetry] Toggling native foreground service:', isActive);
+    try {
+      // Android Interface (WebView)
+      if (window.Android && window.Android.toggleForegroundService) {
+        console.log('[Telemetry] Calling Android.toggleForegroundService');
+        window.Android.toggleForegroundService(isActive);
+      } 
+      // iOS / WebKit Interface
+      else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.toggleForegroundService) {
+        console.log('[Telemetry] Calling iOS toggleForegroundService');
+        window.webkit.messageHandlers.toggleForegroundService.postMessage({ isActive });
+      } else {
+        console.log('[Telemetry] No native bridge found');
+      }
+    } catch (err) {
+      console.warn('Native bridge error:', err);
+    }
   };
 
   // Expose global function for Native App to push location updates directly (Robust Background Tracking)
@@ -283,7 +298,7 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
     const { latitude, longitude, speed: speedMps } = position.coords;
     // timestamp fica em position.timestamp, NÃO em position.coords
     const posTimestamp = position.timestamp || Date.now();
-
+    
     // Convert m/s to km/h (speed can be null)
     const currentSpeedKmh = (speedMps || 0) * 3.6;
     const now = new Date();
@@ -323,10 +338,12 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
       );
       statsRef.current.distanceKm += dist;
       
-      // Detect Hard Brake (GPS-based deceleration)
+      // Detect Hard Brake (Simplified GPS based)
+      // Check deceleration
       const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
       if (timeDiffSeconds > 0 && timeDiffSeconds < 30) {
         const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
+        // If speed dropped significantly
         const deceleration = speedDiff / timeDiffSeconds; // km/h por segundo
         if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
             statsRef.current.hardBrakes++;

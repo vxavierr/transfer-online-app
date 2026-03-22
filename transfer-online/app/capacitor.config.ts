@@ -92,6 +92,12 @@ const config: CapacitorConfig = {
   // ─── Configuração de Plugins ──────────────────────────────────────────────
   plugins: {
 
+    // CapacitorHttp: intercepta fetch/XHR e usa HTTP nativo do Android
+    // Isso bypassa CORS completamente — requests não passam pela WebView
+    CapacitorHttp: {
+      enabled: true,
+    },
+
     // @capacitor/push-notifications
     // ADR-04: Substitui Web Push/VAPID para o app nativo
     // Requer: google-services.json (Android) + APNs key .p8 (iOS)

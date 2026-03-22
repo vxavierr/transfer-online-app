@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Badge } from '@/components/ui/badge';
 import { Activity } from 'lucide-react';
+import GeoService from '@/native/services/GeoService';
 
 export default function TelemetryTracker({ isTracking, driverId, tripId, visible = true }) {
   const [status, setStatus] = useState('idle'); // idle, active, error
@@ -123,25 +124,10 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
     }
   };
 
-  // Helper to bridge with Native Foreground Service
+  // Background tracking é gerenciado pelo GeoService via @capacitor-community/background-geolocation
+  // O plugin já cria uma notificação foreground automaticamente no Android
   const toggleNativeForegroundService = (isActive) => {
-    console.log('[Telemetry] Toggling native foreground service:', isActive);
-    try {
-      // Android Interface (WebView)
-      if (window.Android && window.Android.toggleForegroundService) {
-        console.log('[Telemetry] Calling Android.toggleForegroundService');
-        window.Android.toggleForegroundService(isActive);
-      } 
-      // iOS / WebKit Interface
-      else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.toggleForegroundService) {
-        console.log('[Telemetry] Calling iOS toggleForegroundService');
-        window.webkit.messageHandlers.toggleForegroundService.postMessage({ isActive });
-      } else {
-        console.log('[Telemetry] No native bridge found');
-      }
-    } catch (err) {
-      console.warn('Native bridge error:', err);
-    }
+    console.log('[Telemetry] Background tracking:', isActive ? 'active' : 'inactive');
   };
 
   // Expose global function for Native App to push location updates directly (Robust Background Tracking)
@@ -249,32 +235,55 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
     setStats({ speed: 0, maxSpeed: 0, distanceKm: 0, events: 0 });
   };
 
-  const startGPSMonitoring = () => {
-    if (!('geolocation' in navigator)) return;
+  const startGPSMonitoring = async () => {
+    try {
+      await GeoService.requestPermission();
 
-    const options = {
-      enableHighAccuracy: true,
-      timeout: 10000, // Aumentado para dar mais chance em background
-      maximumAge: 0
-    };
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      handlePositionUpdate,
-      (err) => console.warn('GPS Error', err),
-      options
-    );
+      watchIdRef.current = await GeoService.startBackgroundTracking(
+        (location) => {
+          // Normalizar formato: background plugin retorna flat, watchPosition retorna {coords}
+          let position;
+          if (location.coords) {
+            // Standard Web API (fallback watchPosition)
+            position = location;
+          } else {
+            // @capacitor-community/background-geolocation format
+            position = {
+              coords: {
+                latitude: location.latitude,
+                longitude: location.longitude,
+                speed: location.speed,
+                heading: location.bearing ?? null,
+              },
+              timestamp: location.time || Date.now(),
+            };
+          }
+          handlePositionUpdate(position);
+        },
+        {
+          backgroundMessage: 'Rastreando viagem em andamento',
+          backgroundTitle: 'Transfer Online - Telemetria',
+          distanceFilter: 10,
+        }
+      );
+    } catch (err) {
+      console.warn('[TelemetryTracker] GPS start error:', err);
+      setStatus('error');
+    }
   };
 
-  const stopGPSMonitoring = () => {
+  const stopGPSMonitoring = async () => {
     if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+      await GeoService.stopBackgroundTracking(watchIdRef.current);
       watchIdRef.current = null;
     }
   };
 
   const handlePositionUpdate = (position) => {
-    const { latitude, longitude, speed: speedMps, timestamp } = position.coords;
-    
+    const { latitude, longitude, speed: speedMps } = position.coords;
+    // timestamp fica em position.timestamp, NÃO em position.coords
+    const posTimestamp = position.timestamp || Date.now();
+
     // Convert m/s to km/h (speed can be null)
     const currentSpeedKmh = (speedMps || 0) * 3.6;
     const now = new Date();
@@ -314,15 +323,14 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
       );
       statsRef.current.distanceKm += dist;
       
-      // Detect Hard Brake (Simplified GPS based)
-      // Check deceleration
-      const timeDiffSeconds = (timestamp - lastPositionRef.current.timestamp) / 1000;
-      if (timeDiffSeconds > 0) {
+      // Detect Hard Brake (GPS-based deceleration)
+      const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
+      if (timeDiffSeconds > 0 && timeDiffSeconds < 30) {
         const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
-        // If speed dropped significantly
-        if (speedDiff > HARD_BRAKE_THRESHOLD_KMH_S) {
+        const deceleration = speedDiff / timeDiffSeconds; // km/h por segundo
+        if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
             statsRef.current.hardBrakes++;
-            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, speedDiff);
+            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration);
         }
       }
     }
@@ -375,7 +383,7 @@ export default function TelemetryTracker({ isTracking, driverId, tripId, visible
          logEvent('location_update', latitude, longitude, currentSpeedKmh);
     }
 
-    lastPositionRef.current = { latitude, longitude, speed: currentSpeedKmh, heading: position.coords.heading, timestamp };
+    lastPositionRef.current = { latitude, longitude, speed: currentSpeedKmh, heading: position.coords.heading, timestamp: posTimestamp };
     
     // Update UI state
     setStats({

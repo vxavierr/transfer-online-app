@@ -151,7 +151,11 @@ export const AuthProvider = ({ children }) => {
     if (window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__) {
       window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__(target);
     } else {
-      window.location.href = accessPortalUrl;
+      // Fallback: should not reach here in native — __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__
+      // is registered by NativeAuthNavigator in App.jsx on Capacitor platforms.
+      // Using replace() instead of href assignment to avoid adding a spurious history entry.
+      console.warn('[AuthContext] navigateToLogin fallback hit — __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__ not set. Using window.location.replace().');
+      window.location.replace(accessPortalUrl);
     }
   };
 

@@ -284,6 +284,8 @@ export default function TelemetryTracker({
     };
 
     try {
+      // On native: FGS pushes GPS via window.updateTelemetryLocation (primary)
+      // watchPosition acts as fallback when FGS bridge isn't active yet
       const id = await GeoService.watchPosition(
         handlePositionUpdate,
         (err) => {

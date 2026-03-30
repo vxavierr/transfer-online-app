@@ -19,6 +19,8 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import android.content.pm.ServiceInfo;
+import android.webkit.WebView;
+import java.lang.ref.WeakReference;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -90,6 +92,13 @@ public class LocationTelemetryForegroundService extends Service {
 
     // Executor para flush em background (evita thread leak)
     private final ExecutorService flushExecutor = Executors.newSingleThreadExecutor();
+
+    // WebView reference for JS bridge (GPS push via evaluateJavascript)
+    private static WeakReference<WebView> webViewRef = new WeakReference<>(null);
+
+    public static void setWebView(WebView webView) {
+        webViewRef = new WeakReference<>(webView);
+    }
 
     // ------------------------------------------------------------------ //
     //  onCreate
@@ -280,6 +289,31 @@ public class LocationTelemetryForegroundService extends Service {
                 + " speed=" + String.format(Locale.US, "%.1f", speedKmh) + " km/h"
                 + " acc=" + String.format(Locale.US, "%.0f", accuracy) + "m"
                 + " buffer_size=" + buffer.size());
+
+        // Bridge to JS — push position to TelemetryTracker
+        double heading = location.hasBearing() ? location.getBearing() : -1;
+        pushLocationToJS(location.getLatitude(), location.getLongitude(),
+                location.getSpeed(), heading, location.getTime());
+    }
+
+    private void pushLocationToJS(double lat, double lon, float speedMps, double heading, long timestamp) {
+        WebView webView = webViewRef.get();
+        if (webView == null) return;
+
+        final String js = String.format(Locale.US,
+            "javascript:void(window.updateTelemetryLocation && window.updateTelemetryLocation(%f, %f, %f, %f, %d))",
+            lat, lon, speedMps, heading, timestamp);
+
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                WebView wv = webViewRef.get();
+                if (wv != null) {
+                    wv.evaluateJavascript(js, null);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "pushLocationToJS failed: " + e.getMessage());
+            }
+        });
     }
 
     // ------------------------------------------------------------------ //

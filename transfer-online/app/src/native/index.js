@@ -28,6 +28,7 @@ export { default as GeoService } from './services/GeoService';
 export { default as CameraService } from './services/CameraService';
 export { default as BrowserService } from './services/BrowserService';
 export { PushNotificationService } from './services/PushNotificationService';
+export { default as SensorService } from './services/SensorService';
 
 // Hooks nativos
 export { useAppLifecycle } from './hooks/useAppLifecycle';

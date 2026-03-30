@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { GeoService, isNativePlatform } from '@/native';
+import { GeoService, isNativePlatform, SensorService } from '@/native';
 import TelemetryForeground from '@/native/bridge/TelemetryForegroundBridge';
 import { Badge } from '@/components/ui/badge';
 import { Activity } from 'lucide-react';
@@ -52,6 +52,14 @@ export default function TelemetryTracker({
     phoneUsage: 0
   });
   
+  // Sensor fusion refs
+  const lastAccelRef = useRef({ x: 0, y: 0, z: 0 });
+  const accelSamplesRef = useRef([]);
+  const lastGyroRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
+  const ACCEL_BUFFER_SIZE = 10; // Rolling window of ~0.5s at 20Hz
+  const HARD_BRAKE_G_THRESHOLD = 0.3; // 0.3g = ~2.94 m/s² (industry: 0.265-0.35g)
+  const SHARP_TURN_GYRO_THRESHOLD = 30; // 30 deg/s yaw rate
+
   // Throttle refs para evitar atualizações excessivas
   const lastLocationCallbackRef = useRef(0);
   const lastBackendUpdateRef = useRef(0);
@@ -241,6 +249,16 @@ export default function TelemetryTracker({
         requestWakeLock();
         toggleNativeForegroundService(true);
         startGPSMonitoring();
+        SensorService.start((data) => {
+          lastAccelRef.current = data.acceleration;
+          lastGyroRef.current = data.rotationRate;
+
+          // Rolling buffer for averaging (reduces noise)
+          accelSamplesRef.current.push(data.acceleration);
+          if (accelSamplesRef.current.length > ACCEL_BUFFER_SIZE) {
+            accelSamplesRef.current.shift();
+          }
+        }).catch(err => console.warn('[TelemetryTracker] Sensor start failed:', err));
       }
     } catch (err) {
       console.error('Telemetry start error:', err);
@@ -250,6 +268,8 @@ export default function TelemetryTracker({
 
   const endSession = async () => {
     stopGPSMonitoring();
+    SensorService.stop();
+    accelSamplesRef.current = [];
     releaseWakeLock();
     toggleNativeForegroundService(false);
     await uploadBatch();
@@ -332,27 +352,35 @@ export default function TelemetryTracker({
 
     // Calculate distance & detect events
     if (lastPositionRef.current) {
-      // Detect Sharp Turn
-      if (currentSpeedKmh > SHARP_TURN_MIN_SPEED_KMH
+      // Detect Sharp Turn — prefer gyroscope if available, fallback to GPS heading
+      const gyroYawRate = Math.abs(lastGyroRef.current.alpha);
+
+      if (gyroYawRate > SHARP_TURN_GYRO_THRESHOLD && currentSpeedKmh > SHARP_TURN_MIN_SPEED_KMH) {
+        const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
+        const timeSinceLastTurn = lastTurnTime ? (Date.now() - new Date(lastTurnTime)) : 99999;
+
+        if (timeSinceLastTurn > 5000) {
+          statsRef.current.sharpTurns++;
+          logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, gyroYawRate,
+            JSON.stringify({ source: 'gyroscope', yawRate: gyroYawRate.toFixed(1) }));
+        }
+      } else if (currentSpeedKmh > SHARP_TURN_MIN_SPEED_KMH
           && heading != null && !isNaN(heading) && heading >= 0
           && lastPositionRef.current.heading != null && !isNaN(lastPositionRef.current.heading) && lastPositionRef.current.heading >= 0) {
-
+        // GPS heading fallback
         let headingDiff = Math.abs(heading - lastPositionRef.current.heading);
         if (headingDiff > 180) headingDiff = 360 - headingDiff;
-
         const timeDiffS = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
 
         if (timeDiffS > 0 && timeDiffS < 10) {
           const turnRate = headingDiff / timeDiffS;
-
           if (headingDiff > SHARP_TURN_THRESHOLD_DEG && turnRate > SHARP_TURN_RATE_THRESHOLD_DEG_S) {
             const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
             const timeSinceLastTurn = lastTurnTime ? (Date.now() - new Date(lastTurnTime)) : 99999;
-
             if (timeSinceLastTurn > 5000) {
               statsRef.current.sharpTurns++;
               logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, headingDiff,
-                JSON.stringify({ headingDiff, turnRate: turnRate.toFixed(1), timeDiffS: timeDiffS.toFixed(1) }));
+                JSON.stringify({ source: 'gps', headingDiff, turnRate: turnRate.toFixed(1) }));
             }
           }
         }
@@ -366,15 +394,28 @@ export default function TelemetryTracker({
       );
       statsRef.current.distanceKm += dist;
       
-      // Detect Hard Brake
+      // Detect Hard Brake — prefer accelerometer if available, fallback to GPS delta
       const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
-      if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
+
+      if (accelSamplesRef.current.length >= 3) {
+        // Sensor-based: average Y-axis acceleration (longitudinal = braking)
+        const avgY = accelSamplesRef.current.reduce((sum, s) => sum + s.y, 0) / accelSamplesRef.current.length;
+        const gForce = Math.abs(avgY) / 9.81;
+
+        if (gForce > HARD_BRAKE_G_THRESHOLD && lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
+          statsRef.current.hardBrakes++;
+          logEvent('hard_brake', latitude, longitude, currentSpeedKmh, gForce,
+            JSON.stringify({ source: 'accelerometer', gForce: gForce.toFixed(3) }));
+        }
+      } else if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
+        // GPS fallback
         if (lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
           const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
           const deceleration = speedDiff / timeDiffSeconds;
           if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
             statsRef.current.hardBrakes++;
-            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration);
+            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration,
+              JSON.stringify({ source: 'gps' }));
           }
         }
       }

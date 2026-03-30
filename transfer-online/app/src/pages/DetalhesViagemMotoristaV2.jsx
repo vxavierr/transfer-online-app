@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserService } from '@/native';
+import { BrowserService, isNativePlatform, TelemetryForeground } from '@/native';
 import { base44 } from '@/api/base44Client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -282,6 +282,24 @@ export default function DetalhesViagemMotoristaV2() {
       setIsCommandButtonsEnabled(serviceRequest.driver_trip_status !== 'aguardando');
     }
   }, [serviceRequest]);
+
+  // Auto-foreground on arrival: notify Java FGS of destination coordinates
+  useEffect(() => {
+    if (destinationCoords && isNativePlatform() && TelemetryForeground) {
+      TelemetryForeground.setDestination({
+        latitude: destinationCoords.lat,
+        longitude: destinationCoords.lng,
+        radiusMeters: 100
+      }).catch(err => console.warn('[DetalhesViagem] setDestination error:', err));
+    }
+
+    return () => {
+      if (isNativePlatform() && TelemetryForeground) {
+        TelemetryForeground.clearDestination()
+          .catch(err => console.warn('[DetalhesViagem] clearDestination error:', err));
+      }
+    };
+  }, [destinationCoords]);
 
   const loadTripDetails = async (urlToken, silent = false) => {
     if (!silent) {

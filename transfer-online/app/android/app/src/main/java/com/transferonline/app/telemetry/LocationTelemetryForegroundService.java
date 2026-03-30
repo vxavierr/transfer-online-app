@@ -100,6 +100,31 @@ public class LocationTelemetryForegroundService extends Service {
         webViewRef = new WeakReference<>(webView);
     }
 
+    // Destination geofence
+    private double destLat = 0;
+    private double destLon = 0;
+    private float destRadiusMeters = 100f;
+    private boolean destActive = false;
+    private boolean destTriggered = false;
+
+    private static double pendingDestLat = 0;
+    private static double pendingDestLon = 0;
+    private static float pendingDestRadius = 100f;
+    private static boolean pendingDestSet = false;
+
+    public static void setDestination(double lat, double lon, float radiusMeters) {
+        pendingDestLat = lat;
+        pendingDestLon = lon;
+        pendingDestRadius = radiusMeters;
+        pendingDestSet = true;
+    }
+
+    public static void clearDestination() {
+        pendingDestSet = false;
+        pendingDestLat = 0;
+        pendingDestLon = 0;
+    }
+
     // ------------------------------------------------------------------ //
     //  onCreate
     // ------------------------------------------------------------------ //
@@ -108,6 +133,7 @@ public class LocationTelemetryForegroundService extends Service {
         super.onCreate();
         Log.d(TAG, "onCreate");
         createNotificationChannel();
+        createArrivalChannel();
     }
 
     // ------------------------------------------------------------------ //
@@ -253,6 +279,17 @@ public class LocationTelemetryForegroundService extends Service {
     // ------------------------------------------------------------------ //
 
     private void processLocation(Location location) {
+        // Apply pending destination
+        if (pendingDestSet) {
+            destLat = pendingDestLat;
+            destLon = pendingDestLon;
+            destRadiusMeters = pendingDestRadius;
+            destActive = true;
+            destTriggered = false;
+            pendingDestSet = false;
+            Log.d(TAG, "Destination geofence set: " + destLat + ", " + destLon + " r=" + destRadiusMeters);
+        }
+
         float accuracy = location.getAccuracy();
         // Descartar leituras com acurácia ruim (> 50m)
         if (accuracy > 50f) {
@@ -294,6 +331,19 @@ public class LocationTelemetryForegroundService extends Service {
         double heading = location.hasBearing() ? location.getBearing() : -1;
         pushLocationToJS(location.getLatitude(), location.getLongitude(),
                 location.getSpeed(), heading, location.getTime());
+
+        // Check arrival geofence
+        if (destActive && !destTriggered) {
+            float[] results = new float[1];
+            Location.distanceBetween(location.getLatitude(), location.getLongitude(), destLat, destLon, results);
+            float distMeters = results[0];
+
+            if (distMeters <= destRadiusMeters) {
+                destTriggered = true;
+                Log.d(TAG, "GEOFENCE TRIGGERED — distance=" + distMeters + "m");
+                triggerArrivalAlert();
+            }
+        }
     }
 
     private void pushLocationToJS(double lat, double lon, float speedMps, double heading, long timestamp) {
@@ -495,6 +545,65 @@ public class LocationTelemetryForegroundService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Arrival Alert
+    // ------------------------------------------------------------------ //
+
+    private static final String ARRIVAL_CHANNEL_ID = "vista_telemetry_arrival";
+    private static final int ARRIVAL_NOTIF_ID = 1002;
+
+    private void createArrivalChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    ARRIVAL_CHANNEL_ID,
+                    "Chegada ao destino",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Alerta de chegada ao destino");
+            channel.enableVibration(true);
+            channel.setVibrationPattern(new long[]{0, 500, 200, 500});
+
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null) nm.createNotificationChannel(channel);
+        }
+    }
+
+    private void triggerArrivalAlert() {
+        createArrivalChannel();
+
+        // Intent to open the app's main activity
+        Intent openApp = new Intent(this, com.transferonline.app.MainActivity.class);
+        openApp.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+
+        PendingIntent fullScreenPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID, openApp, flags);
+        PendingIntent contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
+
+        Notification notification = new NotificationCompat.Builder(this, ARRIVAL_CHANNEL_ID)
+                .setContentTitle("Chegou ao destino!")
+                .setContentText("Toque para abrir o Transfer Online")
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(fullScreenPI, true)
+                .setContentIntent(contentPI)
+                .setAutoCancel(true)
+                .setVibrate(new long[]{0, 500, 200, 500})
+                .build();
+
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) {
+            nm.notify(ARRIVAL_NOTIF_ID, notification);
+        }
+
+        // Also push to JS
+        pushLocationToJS(destLat, destLon, 0, -1, System.currentTimeMillis());
     }
 
     // ------------------------------------------------------------------ //

@@ -101,4 +101,33 @@ public class TelemetryForegroundPlugin extends Plugin {
         getContext().startService(intent);
         call.resolve();
     }
+
+    /**
+     * Define o destino para o geofence de chegada.
+     * Quando o motorista chega a <= radiusMeters do destino, dispara alerta full-screen.
+     */
+    @PluginMethod
+    public void setDestination(PluginCall call) {
+        Double lat = call.getDouble("latitude");
+        Double lon = call.getDouble("longitude");
+        Float radius = call.getFloat("radiusMeters", 100f);
+
+        if (lat == null || lon == null) {
+            call.reject("latitude and longitude are required");
+            return;
+        }
+
+        LocationTelemetryForegroundService.setDestination(lat, lon, radius);
+        Log.d(TAG, "setDestination: " + lat + ", " + lon + " r=" + radius);
+        call.resolve();
+    }
+
+    /**
+     * Limpa o destino ativo (ex: ao encerrar a viagem).
+     */
+    @PluginMethod
+    public void clearDestination(PluginCall call) {
+        LocationTelemetryForegroundService.clearDestination();
+        call.resolve();
+    }
 }

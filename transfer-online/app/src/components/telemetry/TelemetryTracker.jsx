@@ -70,12 +70,15 @@ export default function TelemetryTracker({
   const BATCH_INTERVAL = 10000; // 10s — tracking quase real-time
   const DEFAULT_SPEEDING_THRESHOLD_KMH = 110;
   const SILENT_AUDIO_SRC = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAAAMUAAAAA//OEAAABAAAAAgAAAelAYAAAZAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAAAMUAAAAA";
-  const HARD_BRAKE_THRESHOLD_KMH_S = 15;
+  const HARD_BRAKE_THRESHOLD_KMH_S = 11;     // ~3.06 m/s2 — industry standard for fleet
+  const HARD_BRAKE_MIN_SPEED_KMH = 20;        // Ignore braking at low speeds (parking)
+  const HARD_BRAKE_MAX_INTERVAL_S = 10;        // GPS intervals > 10s dilute deceleration too much
   const MOVEMENT_THRESHOLD_KMH = 10;
   const PHONE_USAGE_DEBOUNCE_MS = 10000;
   const SPEED_LIMIT_CHECK_INTERVAL_MS = 30000;
-  const SHARP_TURN_THRESHOLD_DEG = 45;
-  const SHARP_TURN_MIN_SPEED_KMH = 20;
+  const SHARP_TURN_THRESHOLD_DEG = 30;         // Degrees between consecutive readings
+  const SHARP_TURN_RATE_THRESHOLD_DEG_S = 25;  // Degrees per second — normalizes by time
+  const SHARP_TURN_MIN_SPEED_KMH = 15;         // Lower from 20 to catch more turns
 
   // Setup silent audio for background persistence (web only — native uses Foreground Service)
   useEffect(() => {
@@ -328,17 +331,27 @@ export default function TelemetryTracker({
     // Calculate distance & detect events
     if (lastPositionRef.current) {
       // Detect Sharp Turn
-      if (currentSpeedKmh > SHARP_TURN_MIN_SPEED_KMH && heading !== null && lastPositionRef.current.heading !== null) {
+      if (currentSpeedKmh > SHARP_TURN_MIN_SPEED_KMH
+          && heading != null && !isNaN(heading) && heading >= 0
+          && lastPositionRef.current.heading != null && !isNaN(lastPositionRef.current.heading) && lastPositionRef.current.heading >= 0) {
+
         let headingDiff = Math.abs(heading - lastPositionRef.current.heading);
         if (headingDiff > 180) headingDiff = 360 - headingDiff;
-        
-        if (headingDiff > SHARP_TURN_THRESHOLD_DEG) {
-          const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
-          const timeSinceLastTurn = lastTurnTime ? (now - new Date(lastTurnTime)) : 99999;
-          
-          if (timeSinceLastTurn > 5000) {
-            statsRef.current.sharpTurns++;
-            logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, headingDiff);
+
+        const timeDiffS = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
+
+        if (timeDiffS > 0 && timeDiffS < 10) {
+          const turnRate = headingDiff / timeDiffS;
+
+          if (headingDiff > SHARP_TURN_THRESHOLD_DEG && turnRate > SHARP_TURN_RATE_THRESHOLD_DEG_S) {
+            const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
+            const timeSinceLastTurn = lastTurnTime ? (Date.now() - new Date(lastTurnTime)) : 99999;
+
+            if (timeSinceLastTurn > 5000) {
+              statsRef.current.sharpTurns++;
+              logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, headingDiff,
+                JSON.stringify({ headingDiff, turnRate: turnRate.toFixed(1), timeDiffS: timeDiffS.toFixed(1) }));
+            }
           }
         }
       }
@@ -353,12 +366,14 @@ export default function TelemetryTracker({
       
       // Detect Hard Brake
       const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
-      if (timeDiffSeconds > 0 && timeDiffSeconds < 30) {
-        const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
-        const deceleration = speedDiff / timeDiffSeconds; // km/h por segundo
-        if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
-          statsRef.current.hardBrakes++;
-          logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration);
+      if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
+        if (lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
+          const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
+          const deceleration = speedDiff / timeDiffSeconds;
+          if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
+            statsRef.current.hardBrakes++;
+            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration);
+          }
         }
       }
     }

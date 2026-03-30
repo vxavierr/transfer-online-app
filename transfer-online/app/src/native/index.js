@@ -27,10 +27,15 @@ export { default as StorageService } from './services/StorageService';
 export { default as GeoService } from './services/GeoService';
 export { default as CameraService } from './services/CameraService';
 export { default as BrowserService } from './services/BrowserService';
+export { PushNotificationService } from './services/PushNotificationService';
 
 // Hooks nativos
 export { useAppLifecycle } from './hooks/useAppLifecycle';
 export { useNetworkStatus } from './hooks/useNetworkStatus';
+export { useTelemetryTracker } from './hooks/useTelemetryTracker';
+
+// Bridges nativas
+export { default as TelemetryForeground } from './bridge/TelemetryForegroundBridge';
 
 // Utilitários do Capacitor — re-exportados aqui para evitar imports diretos nos componentes.
 // Componentes DEVEM usar esta camada em vez de importar @capacitor/core diretamente.

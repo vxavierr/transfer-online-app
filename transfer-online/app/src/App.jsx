@@ -6,18 +6,19 @@ import { queryClientInstance } from '@/lib/query-client'
 import VisualEditAgent from '@/lib/VisualEditAgent'
 import NavigationTracker from '@/lib/NavigationTracker'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useNavigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import { base44 } from '@/api/base44Client';
 import GerenciarManutencaoFrota from './pages/GerenciarManutencaoFrota';
+import GerenciarContasPagar from './pages/GerenciarContasPagar';
 import ClientAuditAccess from './pages/ClientAuditAccess';
 import ApresentacaoClientesCorporativos from './pages/ApresentacaoClientesCorporativos';
 import ApresentacaoFornecedores from './pages/ApresentacaoFornecedores';
 import Demonstracao from './pages/Demonstracao';
 import AccessPortal from './pages/AccessPortal';
-import { isNativePlatform } from '@/native';
+import { isNativePlatform, PushNotificationService } from '@/native';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -133,9 +134,9 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       <Route path="/" element={
-        isNativePlatform()
-          ? <Navigate to={isAuthenticated ? "/AdminDashboard" : "/AccessPortal"} replace />
-          : <LayoutWrapper currentPageName={mainPageKey}><MainPage /></LayoutWrapper>
+        <LayoutWrapper currentPageName={mainPageKey}>
+          <MainPage />
+        </LayoutWrapper>
       } />
       {Object.entries(Pages).map(([path, Page]) => (
         <Route
@@ -153,6 +154,14 @@ const AuthenticatedApp = () => {
         element={
           <LayoutWrapper currentPageName="GerenciarManutencaoFrota">
             <GerenciarManutencaoFrota />
+          </LayoutWrapper>
+        }
+      />
+      <Route
+        path="/GerenciarContasPagar"
+        element={
+          <LayoutWrapper currentPageName="GerenciarContasPagar">
+            <GerenciarContasPagar />
           </LayoutWrapper>
         }
       />
@@ -200,6 +209,23 @@ const AuthenticatedApp = () => {
 
 
 function App() {
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+
+    PushNotificationService.register();
+
+    PushNotificationService.onNotificationReceived((notification) => {
+      console.log('[Push] received:', notification);
+    });
+
+    PushNotificationService.onNotificationTapped((action) => {
+      console.log('[Push] tapped:', action);
+    });
+
+    return () => {
+      PushNotificationService.removeAllListeners();
+    };
+  }, []);
 
   return (
     <AuthProvider>

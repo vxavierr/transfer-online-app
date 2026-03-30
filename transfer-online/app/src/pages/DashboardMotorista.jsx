@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserService } from '@/native';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -505,7 +506,7 @@ export default function DashboardMotorista() {
     }
   };
 
-  const handleGenerateGoogleCalendarLink = (trip) => {
+  const handleGenerateGoogleCalendarLink = async (trip) => {
     const title = encodeURIComponent(`Viagem: ${trip.request_number || 'Transfer'}`);
     const details = encodeURIComponent(
       `Origem: ${trip.origin}\nDestino: ${trip.destination}\nPassageiro: ${trip.passenger_name}\nTelefone: ${trip.passenger_phone || 'N/A'}`
@@ -524,8 +525,8 @@ export default function DashboardMotorista() {
     const calendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
     
     acknowledgeTripMutation.mutate(trip.id);
-    
-    window.open(calendarUrl, '_blank');
+
+    await BrowserService.open(calendarUrl);
   };
 
   const handleDismissNewTrip = (tripId) => {
@@ -822,17 +823,17 @@ function TripsList({ trips, title, emptyMessage, onViewTrip, onAddToCalendar, sh
     return <Badge variant="outline" className={`${config.color} text-xs font-semibold px-2 py-0.5 whitespace-nowrap`}>{config.label}</Badge>;
   };
 
-  const handleQuickNavigation = (address) => {
+  const handleQuickNavigation = async (address) => {
     // Tenta abrir direto no Waze ou Maps (preferência Waze se mobile)
     const encoded = encodeURIComponent(address);
     // Detectar se é mobile para tentar deep link
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
+
     if (isMobile) {
       // Usar esquema waze:// para forçar abertura do app
       window.location.href = `waze://?q=${encoded}&navigate=yes`;
     } else {
-      window.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`, '_blank');
+      await BrowserService.open(`https://www.google.com/maps/dir/?api=1&destination=${encoded}`);
     }
   };
 

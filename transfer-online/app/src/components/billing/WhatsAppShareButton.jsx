@@ -1,4 +1,5 @@
 import React from 'react';
+import { BrowserService } from '@/native';
 import { Button } from '@/components/ui/button';
 import { MessageCircle } from 'lucide-react';
 import { format } from 'date-fns';
@@ -8,7 +9,7 @@ const formatPrice = (price) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price || 0);
 
 export default function WhatsAppShareButton({ selectedRequests, filteredRequests, clients, supplier }) {
-  const handleShare = () => {
+  const handleShare = async () => {
     const selected = filteredRequests.filter(r => selectedRequests.includes(r.id));
     const total = selected.reduce((sum, r) => sum + (r.chosen_supplier_cost + (r.total_additional_expenses_approved || 0)), 0);
 
@@ -49,7 +50,7 @@ export default function WhatsAppShareButton({ selectedRequests, filteredRequests
     lines.push(`📌 ${selected.length} viagem${selected.length !== 1 ? 'ns' : ''} selecionada${selected.length !== 1 ? 's' : ''}`);
 
     const message = encodeURIComponent(lines.join('\n'));
-    window.open(`https://wa.me/?text=${message}`, '_blank');
+    await BrowserService.open(`https://wa.me/?text=${message}`);
   };
 
   return (

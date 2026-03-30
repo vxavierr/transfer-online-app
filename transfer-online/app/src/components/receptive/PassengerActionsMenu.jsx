@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { BrowserService } from '@/native';
 import { 
   MoreVertical, Phone, MessageCircle, MessageSquare, Plane, User, Car, Trash2, 
   ExternalLink, Loader2, Save, X 
@@ -34,20 +35,20 @@ export default function PassengerActionsMenu({ passenger, request, token, onUpda
     document_number: passenger.details?.document_number || ''
   });
 
-  const handleAction = (action) => {
+  const handleAction = async (action) => {
     switch(action) {
       case 'call':
-        if (profileData.phone_number) window.open(`tel:${profileData.phone_number}`);
+        if (profileData.phone_number) await BrowserService.open(`tel:${profileData.phone_number}`);
         break;
       case 'whatsapp':
         if (profileData.phone_number) {
             const num = profileData.phone_number.replace(/\D/g, '');
-            window.open(`https://wa.me/${num}`);
+            await BrowserService.open(`https://wa.me/${num}`);
         }
         break;
       case 'uber':
         // Link genérico do Uber
-        window.open('https://m.uber.com/ul/', '_blank');
+        await BrowserService.open('https://m.uber.com/ul/');
         break;
       case 'comment':
         setComment(passenger.notes || '');

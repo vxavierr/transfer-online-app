@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { BrowserService } from '@/native';
 import { base44 } from '@/api/base44Client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +65,7 @@ import SwipeableButton from '@/components/ui/SwipeableButton';
 import DriverNavigationMap from '@/components/driver/DriverNavigationMap';
 import TelemetryTracker from '@/components/telemetry/TelemetryTracker';
 import TripNotes from '@/components/driver/TripNotes';
+import { GeoService } from '@/native';
 
 const StopTimer = ({ startTime }) => {
   const [elapsed, setElapsed] = useState('');
@@ -136,7 +138,6 @@ export default function DetalhesViagemMotoristaV2() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [watchId, setWatchId] = useState(null);
   const [gpsPermissionGranted, setGpsPermissionGranted] = useState(false);
   const [gpsPermissionDenied, setGpsPermissionDenied] = useState(false);
   const [showGpsAlert, setShowGpsAlert] = useState(false);
@@ -366,11 +367,11 @@ export default function DetalhesViagemMotoristaV2() {
       });
   };
 
-  const handleShareWhatsApp = () => {
+  const handleShareWhatsApp = async () => {
     const message = encodeURIComponent(
       `🚗 *Acompanhe sua viagem em tempo real!*\n\nViagem ${serviceRequest.request_number}\n\n${sharedTimelineUrl}`
     );
-    window.open(`https://wa.me/?text=${message}`, '_blank');
+    await BrowserService.open(`https://wa.me/?text=${message}`);
   };
 
   const handleAddToGoogleCalendar = async () => {
@@ -384,7 +385,7 @@ export default function DetalhesViagemMotoristaV2() {
       });
 
       if (response.data.success) {
-        window.open(response.data.calendarUrl, '_blank');
+        await BrowserService.open(response.data.calendarUrl);
         setSuccess('✅ Abrindo Google Agenda...');
         setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -398,38 +399,25 @@ export default function DetalhesViagemMotoristaV2() {
   };
 
   const requestGPSPermission = async () => {
-    if (!navigator.geolocation) {
-      setError('Seu dispositivo não suporta geolocalização');
+    try {
+      const position = await GeoService.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 10000
+      });
+      setGpsPermissionGranted(true);
+      setGpsPermissionDenied(false);
+      setShowGpsAlert(false);
+      setSuccess('✅ Permissão de GPS concedida!');
+      setTimeout(() => setSuccess(''), 3000);
+      return true;
+    } catch (err) {
+      console.error('[GPS] Erro ao solicitar permissão:', err);
+      setGpsPermissionGranted(false);
+      setGpsPermissionDenied(true);
       setShowGpsAlert(true);
       return false;
     }
-
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        () => {
-          setGpsPermissionGranted(true);
-          setGpsPermissionDenied(false);
-          setShowGpsAlert(false);
-          localStorage.setItem('gps_permission_granted', 'true');
-          setSuccess('✅ Permissão de GPS concedida! Rastreamento iniciado.');
-          setTimeout(() => setSuccess(''), 3000);
-          resolve(true);
-        },
-        (err) => {
-          console.error('[GPS] Erro ao solicitar permissão:', err);
-          setGpsPermissionGranted(false);
-          setGpsPermissionDenied(true);
-          setShowGpsAlert(true);
-          localStorage.setItem('gps_permission_granted', 'false');
-          resolve(false);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 10000
-        }
-      );
-    });
   };
 
 
@@ -486,22 +474,18 @@ export default function DetalhesViagemMotoristaV2() {
   const safetyAlertKey = `safety_alert_shown_${serviceRequest.id}`;
   const hasShownSafetyAlert = localStorage.getItem(safetyAlertKey) === 'true';
 
-  // Obter localização atual antes de enviar
+  // Obter localização atual via GeoService
   let currentLat = null;
   let currentLon = null;
 
   try {
-    if (navigator.geolocation) {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        });
-      });
-      currentLat = position.coords.latitude;
-      currentLon = position.coords.longitude;
-    }
+    const position = await GeoService.getCurrentPosition({
+      enableHighAccuracy: true,
+      timeout: 5000,
+      maximumAge: 5000
+    });
+    currentLat = position.coords.latitude;
+    currentLon = position.coords.longitude;
   } catch (err) {
     console.warn('Não foi possível obter localização exata para o comando:', err);
     // Fallback para última localização conhecida
@@ -618,25 +602,20 @@ export default function DetalhesViagemMotoristaV2() {
     setIsUpdatingStatus(true);
     setError('');
 
-    // Obter localização atual antes de enviar
+    // Obter localização atual via GeoService
     let currentLat = null;
     let currentLon = null;
 
     try {
-      if (navigator.geolocation) {
-        const position = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
-          });
-        });
-        currentLat = position.coords.latitude;
-        currentLon = position.coords.longitude;
-      }
+      const position = await GeoService.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 5000
+      });
+      currentLat = position.coords.latitude;
+      currentLon = position.coords.longitude;
     } catch (err) {
-      console.warn('Não foi possível obter localização exata para a parada:', err);
-      // Fallback para última localização conhecida
+      console.warn('Não foi possível obter localização para a parada:', err);
       if (serviceRequest.current_location_lat && serviceRequest.current_location_lon) {
         currentLat = serviceRequest.current_location_lat;
         currentLon = serviceRequest.current_location_lon;
@@ -824,10 +803,6 @@ export default function DetalhesViagemMotoristaV2() {
           ? 'Viagem finalizada! Aguardando revisão do fornecedor sobre as despesas adicionais.' 
           : 'Viagem finalizada com sucesso!');
         
-        if (watchId) {
-          navigator.geolocation.clearWatch(watchId);
-          setWatchId(null);
-        }
         setAutoDetectionEnabled(false);
 
         setTimeout(() => {
@@ -844,188 +819,71 @@ export default function DetalhesViagemMotoristaV2() {
     }
   };
 
-  const startContinuousTracking = () => {
-    if (!navigator.geolocation) {
-      setError('Seu dispositivo não suporta geolocalização');
-      setShowGpsAlert(true);
-      return;
+  // GPS tracking é agora gerenciado pelo TelemetryTracker.
+  // Callbacks recebidos do TelemetryTracker:
+  const handleTelemetryLocationUpdate = (location) => {
+    // Atualiza estado local com dados do GPS (throttled pelo TelemetryTracker a cada 5s)
+    setServiceRequest(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        current_location_lat: location.latitude,
+        current_location_lon: location.longitude,
+        current_speed: location.speed,
+        current_heading: location.heading,
+        location_last_updated_at: location.timestamp
+      };
+    });
+
+    // Auto-detecção de chegada
+    if (autoDetectionEnabled && serviceRequest) {
+      if (originCoords && serviceRequest.driver_trip_status === 'a_caminho') {
+        const distToOrigin = calculateDistance(
+          location.latitude, location.longitude,
+          originCoords.lat, originCoords.lng
+        );
+        setDistanceToOrigin(distToOrigin);
+        if (distToOrigin <= 100) {
+          updateStatusMutation.mutateAsync({ newStatus: 'chegou_origem', latitude: location.latitude, longitude: location.longitude });
+          setSuccess('🎯 Chegada à origem detectada automaticamente!');
+          setTimeout(() => setSuccess(''), 5000);
+        }
+      }
+
+      if (destinationCoords && serviceRequest.driver_trip_status === 'passageiro_embarcou') {
+        const distToDestination = calculateDistance(
+          location.latitude, location.longitude,
+          destinationCoords.lat, destinationCoords.lng
+        );
+        setDistanceToDestination(distToDestination);
+        if (distToDestination <= 100) {
+          updateStatusMutation.mutateAsync({ newStatus: 'chegou_destino', latitude: location.latitude, longitude: location.longitude });
+          setShowExpensesDialog(true);
+          setSuccess('🎯 Chegada ao destino detectada automaticamente!');
+          setTimeout(() => setSuccess(''), 5000);
+          setAutoDetectionEnabled(false);
+        }
+      }
     }
-
-    // Tentar obter localização inicial primeiro (mais tolerante)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        console.log('[GPS] Localização inicial obtida com sucesso');
-        // Atualizar imediatamente
-        updateLocationState(position);
-      },
-      (error) => {
-        console.warn('[GPS] Erro na localização inicial:', error.message);
-        // Continuar mesmo sem sucesso inicial
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 30000 // Aceitar cache recente para primeira leitura
-      }
-    );
-
-    const id = navigator.geolocation.watchPosition(
-      async (position) => {
-        await updateLocationState(position);
-      },
-      async (err) => {
-        console.error('[GPS] Erro ao rastrear localização:', err);
-        
-        // Não desistir imediatamente - pode ser timeout temporário
-        if (err.code === 3) { // TIMEOUT
-          console.warn('[GPS] Timeout - tentando novamente...');
-          return; // Continuar tentando
-        }
-        
-        // Permissão negada ou erro de localização
-        setGpsPermissionGranted(false);
-        setGpsPermissionDenied(true);
-        setShowGpsAlert(true);
-        localStorage.setItem('gps_permission_granted', 'false');
-        
-        // Notificar backend que GPS está desabilitado (para alertar admin)
-        try {
-          await base44.functions.invoke('updateDriverLocation', {
-            serviceRequestId: serviceRequest.id,
-            token,
-            latitude: null,
-            longitude: null,
-            gpsDisabled: true
-          });
-        } catch (notifyErr) {
-          console.error('[GPS] Erro ao notificar backend:', notifyErr);
-        }
-        
-        if (watchId) {
-          navigator.geolocation.clearWatch(watchId);
-          setWatchId(null);
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 5000
-      }
-    );
-
-    setWatchId(id);
   };
 
-  const updateLocationState = async (position) => {
-    try {
-      // Permissão concedida com sucesso
+  const handleGpsStatusChange = (gpsStatus) => {
+    if (gpsStatus === 'granted') {
       setGpsPermissionGranted(true);
       setGpsPermissionDenied(false);
       setShowGpsAlert(false);
-
-      // Capturar heading (direção) e speed (velocidade) se disponíveis
-      const heading = position.coords.heading;
-      const speed = position.coords.speed;
-
-      // Atualizar UI imediatamente (Otimistic UI)
-      setServiceRequest(prev => ({
-        ...prev,
-        current_location_lat: position.coords.latitude,
-        current_location_lon: position.coords.longitude,
-        current_heading: heading,
-        current_speed: speed,
-        location_last_updated_at: new Date().toISOString()
-      }));
-
-      // Enviar para backend em background (não bloqueia UI)
-      base44.functions.invoke('updateDriverLocation', {
-        serviceRequestId: serviceRequest.id,
-        token,
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        heading: heading,
-        speed: speed
-      }).catch(err => console.error('[GPS] Erro ao sincronizar backend:', err));
-
-      if (autoDetectionEnabled) {
-        if (originCoords && serviceRequest.driver_trip_status === 'a_caminho') {
-          const distToOrigin = calculateDistance(
-            position.coords.latitude,
-            position.coords.longitude,
-            originCoords.lat,
-            originCoords.lng
-          );
-          setDistanceToOrigin(distToOrigin);
-
-          if (distToOrigin <= 100 && serviceRequest.driver_trip_status === 'a_caminho') {
-            await updateStatusMutation.mutateAsync('chegou_origem');
-            setSuccess('🎯 Chegada à origem detectada automaticamente!');
-            setTimeout(() => setSuccess(''), 5000);
-          }
-        }
-
-        if (destinationCoords && serviceRequest.driver_trip_status === 'passageiro_embarcou') {
-          const distToDestination = calculateDistance(
-            position.coords.latitude,
-            position.coords.longitude,
-            destinationCoords.lat,
-            destinationCoords.lng
-          );
-          setDistanceToDestination(distToDestination);
-
-          if (distToDestination <= 100) {
-            await updateStatusMutation.mutateAsync('chegou_destino');
-            setShowExpensesDialog(true);
-            setSuccess('🎯 Chegada ao destino detectada automaticamente!');
-            setTimeout(() => setSuccess(''), 5000);
-            setAutoDetectionEnabled(false);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao rastrear localização:', err);
+    } else if (gpsStatus === 'denied') {
+      setGpsPermissionGranted(false);
+      setGpsPermissionDenied(true);
+      setShowGpsAlert(true);
     }
   };
 
-  const stopContinuousTracking = () => {
-    if (watchId) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
-    }
-    setAutoDetectionEnabled(false);
-  };
+  // updateLocationState removido — agora gerenciado pelo TelemetryTracker via handleTelemetryLocationUpdate
 
-  // Verificar e solicitar GPS automaticamente quando necessário
-  useEffect(() => {
-    const shouldTrack = serviceRequest?.gps_tracking_enabled && 
-                        ['a_caminho', 'passageiro_embarcou', 'a_caminho_destino', 'parada_adicional'].includes(serviceRequest.driver_trip_status);
-    
-    if (shouldTrack) {
-      // Se não tiver watchId ativo, tentar iniciar rastreamento
-      if (!watchId) {
-        // Verificar se tem permissão
-        if (gpsPermissionGranted) {
-          startContinuousTracking();
-        } else {
-          // Solicitar permissão UMA ÚNICA VEZ automaticamente
-          requestGPSPermission().then(granted => {
-            if (granted) {
-              startContinuousTracking();
-            }
-          });
-        }
-      }
-    } else if (watchId && !shouldTrack) {
-      // Parar rastreamento se não for mais necessário
-      stopContinuousTracking();
-    }
+  // stopContinuousTracking removido — agora gerenciado pelo TelemetryTracker
 
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
-  }, [serviceRequest?.driver_trip_status, serviceRequest?.gps_tracking_enabled, gpsPermissionGranted]);
+  // GPS tracking agora é controlado pelo TelemetryTracker via isTrackingActive prop
 
   const getStatusConfig = (status) => {
     const configs = {
@@ -1094,13 +952,9 @@ export default function DetalhesViagemMotoristaV2() {
   };
 
   const handleOpenNavigation = async (destination) => {
-    // Force start tracking if not active (CRITICAL: Always start tracking for telemetry)
-    if (!watchId && gpsPermissionGranted) {
-      startContinuousTracking();
-    } else if (!gpsPermissionGranted) {
-      // Try to request permissions before opening external app
-      const granted = await requestGPSPermission();
-      if (granted) startContinuousTracking();
+    // GPS é gerenciado pelo TelemetryTracker, mas solicitar permissão se necessário
+    if (!gpsPermissionGranted) {
+      await requestGPSPermission();
     }
 
     if (preferredMap === 'waze') {
@@ -1123,11 +977,11 @@ export default function DetalhesViagemMotoristaV2() {
         } else {
           url = `https://waze.com/ul?q=${encodeURIComponent(destination)}&navigate=yes`;
         }
-        window.open(url, '_blank');
+        await BrowserService.open(url);
       }
     } else if (preferredMap === 'google_maps') {
       const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
-      window.open(url, '_blank');
+      await BrowserService.open(url);
     } else {
       // Internal Map
       setPendingNavigationDestination(destination);
@@ -1232,12 +1086,15 @@ export default function DetalhesViagemMotoristaV2() {
   
   return (
     <div className="min-h-screen bg-[#F8F8F8] pb-4">
-      {/* Componente de Telemetria (Invisível ou Discreto) */}
+      {/* Componente de Telemetria — centraliza GPS, telemetria e envio para backend */}
       {serviceRequest && (
         <TelemetryTracker 
           isTracking={isTrackingActive} 
           driverId={serviceRequest.driver_id} 
           tripId={serviceRequest.id}
+          tripToken={token}
+          onLocationUpdate={handleTelemetryLocationUpdate}
+          onGpsStatusChange={handleGpsStatusChange}
         />
       )}
 
@@ -1329,10 +1186,7 @@ export default function DetalhesViagemMotoristaV2() {
                 </div>
                 <Button
                   onClick={async () => {
-                    const granted = await requestGPSPermission();
-                    if (granted) {
-                      startContinuousTracking();
-                    }
+                    await requestGPSPermission();
                   }}
                   className="w-full bg-red-600 hover:bg-red-700 font-bold"
                   size="sm"
@@ -1483,7 +1337,7 @@ export default function DetalhesViagemMotoristaV2() {
 
                 {(serviceRequest.receptive_performed_by === 'driver' || serviceRequest.receptive_performed_by === 'contracted_company') && serviceRequest.receptive_sign_url && (
                   <Button
-                    onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
+                    onClick={() => BrowserService.open(serviceRequest.receptive_sign_url)}
                     size="sm"
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
                   >
@@ -1698,7 +1552,7 @@ export default function DetalhesViagemMotoristaV2() {
                   />
                 </div>
                 <Button
-                  onClick={() => window.open(serviceRequest.receptive_sign_url, '_blank')}
+                  onClick={() => BrowserService.open(serviceRequest.receptive_sign_url)}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 h-12 text-base font-semibold"
                 >
                   <ExternalLink className="w-5 h-5 mr-2" />

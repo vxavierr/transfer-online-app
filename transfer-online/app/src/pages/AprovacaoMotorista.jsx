@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserService } from '@/native';
 import { useSearchParams } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -195,7 +196,7 @@ export default function AprovacaoMotorista() {
                     )}
                   </div>
                   {driver.license_document_url && (
-                    <Button variant="outline" size="sm" onClick={() => window.open(driver.license_document_url, '_blank')}>
+                    <Button variant="outline" size="sm" onClick={() => BrowserService.open(driver.license_document_url)}>
                       Visualizar
                     </Button>
                   )}
@@ -207,7 +208,7 @@ export default function AprovacaoMotorista() {
                     <div className="text-sm text-gray-500">Documento obrigatório</div>
                   </div>
                   {driver.aso_document_url ? (
-                    <Button variant="outline" size="sm" onClick={() => window.open(driver.aso_document_url, '_blank')}>
+                    <Button variant="outline" size="sm" onClick={() => BrowserService.open(driver.aso_document_url)}>
                       Visualizar
                     </Button>
                   ) : (
@@ -221,7 +222,7 @@ export default function AprovacaoMotorista() {
                     <div className="text-sm text-gray-500">Documento obrigatório</div>
                   </div>
                   {driver.pgr_document_url ? (
-                    <Button variant="outline" size="sm" onClick={() => window.open(driver.pgr_document_url, '_blank')}>
+                    <Button variant="outline" size="sm" onClick={() => BrowserService.open(driver.pgr_document_url)}>
                       Visualizar
                     </Button>
                   ) : (

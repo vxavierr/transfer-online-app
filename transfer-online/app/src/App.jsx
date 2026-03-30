@@ -1,5 +1,5 @@
 import './App.css'
-import { useEffect, useState } from 'react'
+import React, { Component, useEffect, useState } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
@@ -19,6 +19,36 @@ import ApresentacaoFornecedores from './pages/ApresentacaoFornecedores';
 import Demonstracao from './pages/Demonstracao';
 import AccessPortal from './pages/AccessPortal';
 import { isNativePlatform, PushNotificationService } from '@/native';
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('[ErrorBoundary] Uncaught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 20, textAlign: 'center' }}>
+          <h2>Algo deu errado</h2>
+          <p>O app encontrou um erro. Tente fechar e abrir novamente.</p>
+          <button onClick={() => window.location.reload()} style={{ padding: '8px 16px', marginTop: 10 }}>
+            Recarregar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -210,6 +240,17 @@ const AuthenticatedApp = () => {
 
 function App() {
   useEffect(() => {
+    window.onerror = (msg, src, line, col, err) => {
+      console.error('[Global Error]', msg, src, line, col, err);
+      return false;
+    };
+    window.onunhandledrejection = (event) => {
+      console.error('[Unhandled Rejection]', event.reason);
+      event.preventDefault();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isNativePlatform()) return;
 
     PushNotificationService.register();
@@ -228,17 +269,19 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <NavigationTracker />
-          <NativeAuthNavigator />
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-        <VisualEditAgent />
-      </QueryClientProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <NavigationTracker />
+            <NativeAuthNavigator />
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+          <VisualEditAgent />
+        </QueryClientProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }
 

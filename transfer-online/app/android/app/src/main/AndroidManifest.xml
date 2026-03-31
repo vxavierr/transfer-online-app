@@ -95,4 +95,7 @@
 
     <!-- moveTaskToFront for arrival alert (Android 14+) -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
+
+    <!-- Draw over other apps — allows launching activity from background (Uber-style alert) -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 </manifest>

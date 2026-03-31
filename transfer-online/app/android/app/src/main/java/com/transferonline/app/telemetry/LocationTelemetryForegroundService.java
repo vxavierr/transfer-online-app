@@ -19,6 +19,7 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import android.content.pm.ServiceInfo;
+import android.provider.Settings;
 import android.webkit.WebView;
 import java.lang.ref.WeakReference;
 
@@ -654,24 +655,42 @@ public class LocationTelemetryForegroundService extends Service {
     }
 
     private void triggerArrivalAlert(String title, String message) {
-        // PRIMARY: moveTaskToFront (works on Android 14+, no full-screen intent restriction)
-        try {
-            android.app.ActivityManager am =
-                    (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am != null) {
-                List<android.app.ActivityManager.AppTask> tasks = am.getAppTasks();
-                if (!tasks.isEmpty()) {
-                    tasks.get(0).moveToFront();
-                    Log.d(TAG, "moveTaskToFront succeeded");
-                } else {
-                    Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                    startActivity(launchIntent);
-                    Log.d(TAG, "Started MainActivity directly (no app tasks found)");
-                }
+        boolean hasOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                || Settings.canDrawOverlays(this);
+
+        if (hasOverlay) {
+            // PRIMARY (overlay granted): startActivity directly — more reliable on Android 14+
+            try {
+                Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
+                launchIntent.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                startActivity(launchIntent);
+                Log.d(TAG, "startActivity succeeded (SYSTEM_ALERT_WINDOW granted)");
+            } catch (Exception e) {
+                Log.w(TAG, "startActivity failed even with overlay: " + e.getMessage());
             }
-        } catch (Exception e) {
-            Log.w(TAG, "moveTaskToFront failed: " + e.getMessage());
+        } else {
+            // FALLBACK (no overlay): moveTaskToFront
+            try {
+                android.app.ActivityManager am =
+                        (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                if (am != null) {
+                    List<android.app.ActivityManager.AppTask> tasks = am.getAppTasks();
+                    if (!tasks.isEmpty()) {
+                        tasks.get(0).moveToFront();
+                        Log.d(TAG, "moveTaskToFront succeeded (overlay not granted)");
+                    } else {
+                        Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                        startActivity(launchIntent);
+                        Log.d(TAG, "Started MainActivity directly (no app tasks found)");
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "moveTaskToFront failed: " + e.getMessage());
+            }
         }
 
         // SECONDARY: notification (visual alert + sound, always shown)

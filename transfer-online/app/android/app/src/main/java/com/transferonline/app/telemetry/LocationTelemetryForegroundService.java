@@ -100,29 +100,78 @@ public class LocationTelemetryForegroundService extends Service {
         webViewRef = new WeakReference<>(webView);
     }
 
-    // Destination geofence
+    // Geofence — origin
+    private double originLat = 0;
+    private double originLon = 0;
+    private boolean originActive = false;
+    private boolean originTriggered = false;
+
+    // Geofence — destination
     private double destLat = 0;
     private double destLon = 0;
-    private float destRadiusMeters = 100f;
     private boolean destActive = false;
     private boolean destTriggered = false;
 
+    // Shared radius
+    private float geofenceRadiusMeters = 50f;
+
+    // Pending statics (set from JS thread, applied in GPS thread)
+    private static double pendingOriginLat = 0;
+    private static double pendingOriginLon = 0;
     private static double pendingDestLat = 0;
     private static double pendingDestLon = 0;
-    private static float pendingDestRadius = 100f;
-    private static boolean pendingDestSet = false;
+    private static float pendingRadius = 50f;
+    private static boolean pendingGeofenceSet = false;
 
-    public static void setDestination(double lat, double lon, float radiusMeters) {
-        pendingDestLat = lat;
-        pendingDestLon = lon;
-        pendingDestRadius = radiusMeters;
-        pendingDestSet = true;
+    private static final String PREFS_GEOFENCE = "telemetry_geofence";
+    private static final String KEY_ORIGIN_LAT = "origin_lat";
+    private static final String KEY_ORIGIN_LON = "origin_lon";
+    private static final String KEY_DEST_LAT   = "dest_lat";
+    private static final String KEY_DEST_LON   = "dest_lon";
+    private static final String KEY_RADIUS      = "radius";
+    private static final String KEY_ACTIVE      = "geofence_active";
+
+    public static void setGeofences(Context ctx, double origLat, double origLon,
+                                     double dstLat, double dstLon, float radiusMeters) {
+        pendingOriginLat = origLat;
+        pendingOriginLon = origLon;
+        pendingDestLat   = dstLat;
+        pendingDestLon   = dstLon;
+        pendingRadius    = radiusMeters;
+        pendingGeofenceSet = true;
+
+        // Persist so service can recover after process death
+        if (ctx != null) {
+            ctx.getSharedPreferences(PREFS_GEOFENCE, Context.MODE_PRIVATE).edit()
+                    .putFloat(KEY_ORIGIN_LAT, (float) origLat)
+                    .putFloat(KEY_ORIGIN_LON, (float) origLon)
+                    .putFloat(KEY_DEST_LAT,   (float) dstLat)
+                    .putFloat(KEY_DEST_LON,   (float) dstLon)
+                    .putFloat(KEY_RADIUS,     radiusMeters)
+                    .putBoolean(KEY_ACTIVE,   true)
+                    .apply();
+        }
     }
 
+    public static void clearGeofences(Context ctx) {
+        pendingGeofenceSet = false;
+        pendingOriginLat = pendingOriginLon = pendingDestLat = pendingDestLon = 0;
+
+        if (ctx != null) {
+            ctx.getSharedPreferences(PREFS_GEOFENCE, Context.MODE_PRIVATE).edit()
+                    .putBoolean(KEY_ACTIVE, false)
+                    .apply();
+        }
+    }
+
+    /** @deprecated Use setGeofences instead */
+    public static void setDestination(double lat, double lon, float radiusMeters) {
+        // no-op redirect — kept for binary compatibility
+    }
+
+    /** @deprecated Use clearGeofences instead */
     public static void clearDestination() {
-        pendingDestSet = false;
-        pendingDestLat = 0;
-        pendingDestLon = 0;
+        // no-op redirect — kept for binary compatibility
     }
 
     // ------------------------------------------------------------------ //
@@ -190,6 +239,22 @@ public class LocationTelemetryForegroundService extends Service {
 
         // Marcar tracking como ativo
         prefs.edit().putBoolean(KEY_TRACKING_ACTIVE, true).commit();
+
+        // Restore geofences from SharedPreferences (survive process death)
+        SharedPreferences geoPrefs = getSharedPreferences(PREFS_GEOFENCE, MODE_PRIVATE);
+        if (geoPrefs.getBoolean(KEY_ACTIVE, false)) {
+            originLat = geoPrefs.getFloat(KEY_ORIGIN_LAT, 0f);
+            originLon = geoPrefs.getFloat(KEY_ORIGIN_LON, 0f);
+            destLat   = geoPrefs.getFloat(KEY_DEST_LAT, 0f);
+            destLon   = geoPrefs.getFloat(KEY_DEST_LON, 0f);
+            geofenceRadiusMeters = geoPrefs.getFloat(KEY_RADIUS, 50f);
+            originActive = true;
+            destActive   = true;
+            originTriggered = false;
+            destTriggered   = false;
+            Log.d(TAG, "Geofences restored from prefs — origin=" + originLat + "," + originLon
+                    + " dest=" + destLat + "," + destLon + " r=" + geofenceRadiusMeters);
+        }
 
         return START_STICKY;
     }
@@ -279,15 +344,20 @@ public class LocationTelemetryForegroundService extends Service {
     // ------------------------------------------------------------------ //
 
     private void processLocation(Location location) {
-        // Apply pending destination
-        if (pendingDestSet) {
-            destLat = pendingDestLat;
-            destLon = pendingDestLon;
-            destRadiusMeters = pendingDestRadius;
-            destActive = true;
-            destTriggered = false;
-            pendingDestSet = false;
-            Log.d(TAG, "Destination geofence set: " + destLat + ", " + destLon + " r=" + destRadiusMeters);
+        // Apply pending geofences (set from JS/plugin thread)
+        if (pendingGeofenceSet) {
+            originLat = pendingOriginLat;
+            originLon = pendingOriginLon;
+            destLat   = pendingDestLat;
+            destLon   = pendingDestLon;
+            geofenceRadiusMeters = pendingRadius;
+            originActive = true;
+            destActive   = true;
+            originTriggered = false;
+            destTriggered   = false;
+            pendingGeofenceSet = false;
+            Log.d(TAG, "Geofences applied — origin=" + originLat + "," + originLon
+                    + " dest=" + destLat + "," + destLon + " r=" + geofenceRadiusMeters);
         }
 
         float accuracy = location.getAccuracy();
@@ -332,16 +402,29 @@ public class LocationTelemetryForegroundService extends Service {
         pushLocationToJS(location.getLatitude(), location.getLongitude(),
                 location.getSpeed(), heading, location.getTime());
 
-        // Check arrival geofence
+        // Check origin geofence
+        if (originActive && !originTriggered) {
+            float[] results = new float[1];
+            Location.distanceBetween(location.getLatitude(), location.getLongitude(),
+                    originLat, originLon, results);
+            float distMeters = results[0];
+            if (distMeters <= geofenceRadiusMeters) {
+                originTriggered = true;
+                Log.d(TAG, "ORIGIN GEOFENCE TRIGGERED — distance=" + distMeters + "m");
+                triggerArrivalAlert("Chegando à origem", "Você está a " + (int) distMeters + "m do ponto de embarque");
+            }
+        }
+
+        // Check destination geofence
         if (destActive && !destTriggered) {
             float[] results = new float[1];
-            Location.distanceBetween(location.getLatitude(), location.getLongitude(), destLat, destLon, results);
+            Location.distanceBetween(location.getLatitude(), location.getLongitude(),
+                    destLat, destLon, results);
             float distMeters = results[0];
-
-            if (distMeters <= destRadiusMeters) {
+            if (distMeters <= geofenceRadiusMeters) {
                 destTriggered = true;
-                Log.d(TAG, "GEOFENCE TRIGGERED — distance=" + distMeters + "m");
-                triggerArrivalAlert();
+                Log.d(TAG, "DESTINATION GEOFENCE TRIGGERED — distance=" + distMeters + "m");
+                triggerArrivalAlert("Chegou ao destino!", "Você chegou ao ponto de desembarque");
             }
         }
     }
@@ -570,10 +653,30 @@ public class LocationTelemetryForegroundService extends Service {
         }
     }
 
-    private void triggerArrivalAlert() {
+    private void triggerArrivalAlert(String title, String message) {
+        // PRIMARY: moveTaskToFront (works on Android 14+, no full-screen intent restriction)
+        try {
+            android.app.ActivityManager am =
+                    (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                List<android.app.ActivityManager.AppTask> tasks = am.getAppTasks();
+                if (!tasks.isEmpty()) {
+                    tasks.get(0).moveToFront();
+                    Log.d(TAG, "moveTaskToFront succeeded");
+                } else {
+                    Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                    startActivity(launchIntent);
+                    Log.d(TAG, "Started MainActivity directly (no app tasks found)");
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "moveTaskToFront failed: " + e.getMessage());
+        }
+
+        // SECONDARY: notification (visual alert + sound, always shown)
         createArrivalChannel();
 
-        // Intent to open the app's main activity
         Intent openApp = new Intent(this, com.transferonline.app.MainActivity.class);
         openApp.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
 
@@ -581,28 +684,30 @@ public class LocationTelemetryForegroundService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-
-        PendingIntent fullScreenPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID, openApp, flags);
         PendingIntent contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
 
-        Notification notification = new NotificationCompat.Builder(this, ARRIVAL_CHANNEL_ID)
-                .setContentTitle("Chegou ao destino!")
-                .setContentText("Toque para abrir o Transfer Online")
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ARRIVAL_CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(message)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setFullScreenIntent(fullScreenPI, true)
                 .setContentIntent(contentPI)
                 .setAutoCancel(true)
-                .setVibrate(new long[]{0, 500, 200, 500})
-                .build();
+                .setVibrate(new long[]{0, 500, 200, 500});
+
+        // Full-screen intent only on Android < 14 (UPSIDE_DOWN_CAKE = API 34)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            PendingIntent fullScreenPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID, openApp, flags);
+            builder.setFullScreenIntent(fullScreenPI, true);
+        }
 
         NotificationManager nm = getSystemService(NotificationManager.class);
         if (nm != null) {
-            nm.notify(ARRIVAL_NOTIF_ID, notification);
+            nm.notify(ARRIVAL_NOTIF_ID, builder.build());
         }
 
-        // Also push to JS
+        // Push to JS bridge
         pushLocationToJS(destLat, destLon, 0, -1, System.currentTimeMillis());
     }
 

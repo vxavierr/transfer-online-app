@@ -283,23 +283,27 @@ export default function DetalhesViagemMotoristaV2() {
     }
   }, [serviceRequest]);
 
-  // Auto-foreground on arrival: notify Java FGS of destination coordinates
+  // Auto-foreground on arrival: set origin + destination geofences in Java FGS (50m radius)
   useEffect(() => {
-    if (destinationCoords && isNativePlatform() && TelemetryForeground) {
-      TelemetryForeground.setDestination({
-        latitude: destinationCoords.lat,
-        longitude: destinationCoords.lng,
-        radiusMeters: 100
-      }).catch(err => console.warn('[DetalhesViagem] setDestination error:', err));
+    if (originCoords && destinationCoords && isNativePlatform() && TelemetryForeground) {
+      console.log('[DetalhesViagem] Setting geofences — origin:', originCoords, 'dest:', destinationCoords);
+      TelemetryForeground.setGeofences({
+        originLat: originCoords.lat,
+        originLon: originCoords.lng,
+        destLat: destinationCoords.lat,
+        destLon: destinationCoords.lng,
+        radiusMeters: 50
+      }).then(() => console.log('[DetalhesViagem] setGeofences OK'))
+        .catch(err => console.warn('[DetalhesViagem] setGeofences error:', err));
     }
 
     return () => {
       if (isNativePlatform() && TelemetryForeground) {
-        TelemetryForeground.clearDestination()
-          .catch(err => console.warn('[DetalhesViagem] clearDestination error:', err));
+        TelemetryForeground.clearGeofences()
+          .catch(err => console.warn('[DetalhesViagem] clearGeofences error:', err));
       }
     };
-  }, [destinationCoords]);
+  }, [originCoords, destinationCoords]);
 
   const loadTripDetails = async (urlToken, silent = false) => {
     if (!silent) {

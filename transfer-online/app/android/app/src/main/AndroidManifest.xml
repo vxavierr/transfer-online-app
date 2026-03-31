@@ -90,6 +90,9 @@
     <!-- Alarme exato para reiniciar serviço (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
-    <!-- Full-screen intent for arrival alert -->
+    <!-- Full-screen intent for arrival alert (Android < 14 only) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- moveTaskToFront for arrival alert (Android 14+) -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
 </manifest>

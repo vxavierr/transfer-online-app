@@ -103,31 +103,59 @@ public class TelemetryForegroundPlugin extends Plugin {
     }
 
     /**
-     * Define o destino para o geofence de chegada.
-     * Quando o motorista chega a <= radiusMeters do destino, dispara alerta full-screen.
+     * Define geofences de origem E destino (raio 50m padrão).
+     * Chamado quando o motorista aceita a viagem e ambas as coordenadas estão disponíveis.
      */
     @PluginMethod
-    public void setDestination(PluginCall call) {
-        Double lat = call.getDouble("latitude");
-        Double lon = call.getDouble("longitude");
-        Float radius = call.getFloat("radiusMeters", 100f);
+    public void setGeofences(PluginCall call) {
+        Double originLat = call.getDouble("originLat");
+        Double originLon = call.getDouble("originLon");
+        Double destLat   = call.getDouble("destLat");
+        Double destLon   = call.getDouble("destLon");
+        Float  radius    = call.getFloat("radiusMeters", 50f);
 
-        if (lat == null || lon == null) {
-            call.reject("latitude and longitude are required");
+        if (originLat == null || originLon == null || destLat == null || destLon == null) {
+            call.reject("originLat, originLon, destLat, destLon are required");
             return;
         }
 
-        LocationTelemetryForegroundService.setDestination(lat, lon, radius);
-        Log.d(TAG, "setDestination: " + lat + ", " + lon + " r=" + radius);
+        LocationTelemetryForegroundService.setGeofences(
+                getContext(), originLat, originLon, destLat, destLon, radius);
+        Log.d(TAG, "setGeofences — origin=" + originLat + "," + originLon
+                + " dest=" + destLat + "," + destLon + " r=" + radius);
         call.resolve();
     }
 
     /**
-     * Limpa o destino ativo (ex: ao encerrar a viagem).
+     * Limpa ambas as geofences ativas (ex: ao encerrar a viagem).
+     */
+    @PluginMethod
+    public void clearGeofences(PluginCall call) {
+        LocationTelemetryForegroundService.clearGeofences(getContext());
+        call.resolve();
+    }
+
+    /**
+     * @deprecated Use setGeofences. Kept for backwards compatibility.
+     */
+    @PluginMethod
+    public void setDestination(PluginCall call) {
+        Double lat    = call.getDouble("latitude");
+        Double lon    = call.getDouble("longitude");
+        Float  radius = call.getFloat("radiusMeters", 50f);
+        if (lat == null || lon == null) { call.reject("latitude and longitude are required"); return; }
+        // Redirect: use 0,0 as dummy origin since we don't have it here
+        LocationTelemetryForegroundService.setGeofences(getContext(), lat, lon, lat, lon, radius);
+        Log.w(TAG, "setDestination (deprecated) called — use setGeofences");
+        call.resolve();
+    }
+
+    /**
+     * @deprecated Use clearGeofences. Kept for backwards compatibility.
      */
     @PluginMethod
     public void clearDestination(PluginCall call) {
-        LocationTelemetryForegroundService.clearDestination();
+        LocationTelemetryForegroundService.clearGeofences(getContext());
         call.resolve();
     }
 }

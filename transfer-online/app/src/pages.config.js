@@ -48,6 +48,7 @@
  * The mainPage value must match a key in the PAGES object exactly.
  */
 import AceitarConvite from './pages/AceitarConvite';
+import AccessPortal from './pages/AccessPortal';
 import AcompanharSolicitacoes from './pages/AcompanharSolicitacoes';
 import AdminDashboard from './pages/AdminDashboard';
 import AlterarSenha from './pages/AlterarSenha';
@@ -135,6 +136,7 @@ import __Layout from './Layout.jsx';
 
 export const PAGES = {
     "AceitarConvite": AceitarConvite,
+    "AccessPortal": AccessPortal,
     "AcompanharSolicitacoes": AcompanharSolicitacoes,
     "AdminDashboard": AdminDashboard,
     "AlterarSenha": AlterarSenha,
@@ -220,7 +222,7 @@ export const PAGES = {
 }
 
 export const pagesConfig = {
-    mainPage: "NovaReserva",
+    mainPage: "AccessPortal",
     Pages: PAGES,
     Layout: __Layout,
 };

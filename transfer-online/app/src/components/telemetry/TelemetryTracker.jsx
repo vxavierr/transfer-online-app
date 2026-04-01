@@ -56,9 +56,10 @@ export default function TelemetryTracker({
   const lastAccelRef = useRef({ x: 0, y: 0, z: 0 });
   const accelSamplesRef = useRef([]);
   const lastGyroRef = useRef({ alpha: 0, beta: 0, gamma: 0 });
-  const ACCEL_BUFFER_SIZE = 10; // Rolling window of ~0.5s at 20Hz
-  const HARD_BRAKE_G_THRESHOLD = 0.3; // 0.3g = ~2.94 m/s² (industry: 0.265-0.35g)
-  const SHARP_TURN_GYRO_THRESHOLD = 30; // 30 deg/s yaw rate
+  const ACCEL_BUFFER_SIZE = 20; // Rolling window of ~1s at 20Hz (more samples = less noise)
+  const HARD_BRAKE_G_THRESHOLD = 0.45; // 0.45g = ~4.4 m/s² — filters road vibration, catches real braking
+  const SHARP_TURN_GYRO_THRESHOLD = 45; // 45 deg/s yaw rate — filters normal turns, catches sharp ones
+  const INCIDENT_DEBOUNCE_MS = 15000; // 15s between same incident type — prevents spam
 
   // Throttle refs para evitar atualizações excessivas
   const lastLocationCallbackRef = useRef(0);
@@ -78,15 +79,15 @@ export default function TelemetryTracker({
   const BATCH_INTERVAL = 10000; // 10s — tracking quase real-time
   const DEFAULT_SPEEDING_THRESHOLD_KMH = 110;
   const SILENT_AUDIO_SRC = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAAAMUAAAAA//OEAAABAAAAAgAAAelAYAAAZAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAAAMUAAAAA";
-  const HARD_BRAKE_THRESHOLD_KMH_S = 11;     // ~3.06 m/s2 — industry standard for fleet
-  const HARD_BRAKE_MIN_SPEED_KMH = 20;        // Ignore braking at low speeds (parking)
-  const HARD_BRAKE_MAX_INTERVAL_S = 10;        // GPS intervals > 10s dilute deceleration too much
+  const HARD_BRAKE_THRESHOLD_KMH_S = 15;     // ~4.17 m/s2 — GPS is imprecise, needs higher threshold
+  const HARD_BRAKE_MIN_SPEED_KMH = 25;        // Ignore braking below 25 km/h (traffic, parking)
+  const HARD_BRAKE_MAX_INTERVAL_S = 5;         // GPS intervals > 5s dilute too much — discard
   const MOVEMENT_THRESHOLD_KMH = 10;
   const PHONE_USAGE_DEBOUNCE_MS = 10000;
   const SPEED_LIMIT_CHECK_INTERVAL_MS = 30000;
-  const SHARP_TURN_THRESHOLD_DEG = 30;         // Degrees between consecutive readings
-  const SHARP_TURN_RATE_THRESHOLD_DEG_S = 25;  // Degrees per second — normalizes by time
-  const SHARP_TURN_MIN_SPEED_KMH = 15;         // Lower from 20 to catch more turns
+  const SHARP_TURN_THRESHOLD_DEG = 45;         // Degrees between consecutive readings
+  const SHARP_TURN_RATE_THRESHOLD_DEG_S = 35;  // Degrees per second — filters normal turns
+  const SHARP_TURN_MIN_SPEED_KMH = 20;         // Ignore turns at low speed (manobras)
 
   // Setup silent audio for background persistence (web only — native uses Foreground Service)
   useEffect(() => {
@@ -359,7 +360,7 @@ export default function TelemetryTracker({
         const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
         const timeSinceLastTurn = lastTurnTime ? (Date.now() - new Date(lastTurnTime)) : 99999;
 
-        if (timeSinceLastTurn > 5000) {
+        if (timeSinceLastTurn > INCIDENT_DEBOUNCE_MS) {
           statsRef.current.sharpTurns++;
           logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, gyroYawRate,
             JSON.stringify({ source: 'gyroscope', yawRate: gyroYawRate.toFixed(1) }));
@@ -377,7 +378,7 @@ export default function TelemetryTracker({
           if (headingDiff > SHARP_TURN_THRESHOLD_DEG && turnRate > SHARP_TURN_RATE_THRESHOLD_DEG_S) {
             const lastTurnTime = eventBufferRef.current.findLast(e => e.type === 'sharp_turn')?.timestamp;
             const timeSinceLastTurn = lastTurnTime ? (Date.now() - new Date(lastTurnTime)) : 99999;
-            if (timeSinceLastTurn > 5000) {
+            if (timeSinceLastTurn > INCIDENT_DEBOUNCE_MS) {
               statsRef.current.sharpTurns++;
               logEvent('sharp_turn', latitude, longitude, currentSpeedKmh, headingDiff,
                 JSON.stringify({ source: 'gps', headingDiff, turnRate: turnRate.toFixed(1) }));
@@ -397,25 +398,31 @@ export default function TelemetryTracker({
       // Detect Hard Brake — prefer accelerometer if available, fallback to GPS delta
       const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
 
-      if (accelSamplesRef.current.length >= 3) {
-        // Sensor-based: average Y-axis acceleration (longitudinal = braking)
-        const avgY = accelSamplesRef.current.reduce((sum, s) => sum + s.y, 0) / accelSamplesRef.current.length;
-        const gForce = Math.abs(avgY) / 9.81;
+      // Debounce: only detect braking if last brake event was > 15s ago
+      const lastBrakeTime = eventBufferRef.current.findLast(e => e.type === 'hard_brake')?.timestamp;
+      const timeSinceLastBrake = lastBrakeTime ? (now - new Date(lastBrakeTime)) : 99999;
 
-        if (gForce > HARD_BRAKE_G_THRESHOLD && lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
-          statsRef.current.hardBrakes++;
-          logEvent('hard_brake', latitude, longitude, currentSpeedKmh, gForce,
-            JSON.stringify({ source: 'accelerometer', gForce: gForce.toFixed(3) }));
-        }
-      } else if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
-        // GPS fallback
-        if (lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
-          const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
-          const deceleration = speedDiff / timeDiffSeconds;
-          if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
+      if (timeSinceLastBrake > INCIDENT_DEBOUNCE_MS) {
+        if (accelSamplesRef.current.length >= 5) {
+          // Sensor-based: average Y-axis acceleration (longitudinal = braking)
+          const avgY = accelSamplesRef.current.reduce((sum, s) => sum + s.y, 0) / accelSamplesRef.current.length;
+          const gForce = Math.abs(avgY) / 9.81;
+
+          if (gForce > HARD_BRAKE_G_THRESHOLD && currentSpeedKmh > HARD_BRAKE_MIN_SPEED_KMH) {
             statsRef.current.hardBrakes++;
-            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration,
-              JSON.stringify({ source: 'gps' }));
+            logEvent('hard_brake', latitude, longitude, currentSpeedKmh, gForce,
+              JSON.stringify({ source: 'accelerometer', gForce: gForce.toFixed(3) }));
+          }
+        } else if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
+          // GPS fallback
+          if (lastPositionRef.current.speed > HARD_BRAKE_MIN_SPEED_KMH) {
+            const speedDiff = lastPositionRef.current.speed - currentSpeedKmh;
+            const deceleration = speedDiff / timeDiffSeconds;
+            if (deceleration > HARD_BRAKE_THRESHOLD_KMH_S) {
+              statsRef.current.hardBrakes++;
+              logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration,
+                JSON.stringify({ source: 'gps' }));
+            }
           }
         }
       }

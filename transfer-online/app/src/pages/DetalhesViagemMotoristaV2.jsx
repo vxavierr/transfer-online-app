@@ -113,21 +113,48 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-const geocodeAddress = async (address) => {
+const geocodeAddress = async (address, retries = 2) => {
+  console.log('[Geofence] Geocoding:', address);
+
+  // Tentativa 1: Google Maps
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=AIzaSyDpTGd0zvKbJCjo5VUGDFCk9kEGgQhOhAU`
+      );
+      const data = await response.json();
+      console.log('[Geofence] Geocode response status:', data.status, 'results:', data.results?.length);
+      if (data.results && data.results.length > 0) {
+        const location = data.results[0].geometry.location;
+        console.log('[Geofence] Google OK:', location.lat, location.lng);
+        return { lat: location.lat, lng: location.lng };
+      }
+      console.warn('[Geofence] Google: no results (attempt', i + 1, ')');
+    } catch (error) {
+      console.warn('[Geofence] Google failed (attempt', i + 1, '):', error.message);
+    }
+  }
+
+  // Fallback: Nominatim (OpenStreetMap)
   try {
+    console.log('[Geofence] Trying Nominatim fallback...');
     const response = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=AIzaSyDpTGd0zvKbJCjo5VUGDFCk9kEGgQhOhAU`
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+      { headers: { 'User-Agent': 'TransferOnline/1.0' } }
     );
     const data = await response.json();
-    if (data.results && data.results.length > 0) {
-      const location = data.results[0].geometry.location;
-      return { lat: location.lat, lng: location.lng };
+    if (data && data.length > 0) {
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
+      console.log('[Geofence] Nominatim OK:', lat, lng);
+      return { lat, lng };
     }
-    return null;
+    console.warn('[Geofence] Nominatim: no results');
   } catch (error) {
-    console.error('[geocodeAddress] Erro:', error);
-    return null;
+    console.error('[Geofence] Nominatim also failed:', error.message);
   }
+
+  return null;
 };
 
 export default function DetalhesViagemMotoristaV2() {
@@ -285,22 +312,35 @@ export default function DetalhesViagemMotoristaV2() {
 
   // Auto-foreground on arrival: set origin + destination geofences in Java FGS (50m radius)
   useEffect(() => {
-    if (originCoords && destinationCoords && isNativePlatform() && TelemetryForeground) {
-      console.log('[DetalhesViagem] Setting geofences — origin:', originCoords, 'dest:', destinationCoords);
-      TelemetryForeground.setGeofences({
-        originLat: originCoords.lat,
-        originLon: originCoords.lng,
-        destLat: destinationCoords.lat,
-        destLon: destinationCoords.lng,
-        radiusMeters: 50
-      }).then(() => console.log('[DetalhesViagem] setGeofences OK'))
-        .catch(err => console.warn('[DetalhesViagem] setGeofences error:', err));
+    console.log('[Geofence] useEffect triggered — origin:', originCoords, 'dest:', destinationCoords,
+      'native:', isNativePlatform(), 'plugin:', !!TelemetryForeground);
+
+    if (!isNativePlatform() || !TelemetryForeground) {
+      console.warn('[Geofence] NOT setting geofences —',
+        !isNativePlatform() ? 'not native platform' : 'TelemetryForeground plugin missing');
+      return;
     }
+
+    const hasAny = originCoords || destinationCoords;
+    if (!hasAny) {
+      console.warn('[Geofence] NOT setting geofences — no coords resolved yet');
+      return;
+    }
+
+    console.log('[Geofence] Calling setGeofences — origin:', originCoords, 'dest:', destinationCoords);
+    TelemetryForeground.setGeofences({
+      originLat: originCoords?.lat ?? 0,
+      originLon: originCoords?.lng ?? 0,
+      destLat: destinationCoords?.lat ?? 0,
+      destLon: destinationCoords?.lng ?? 0,
+      radiusMeters: 50
+    }).then(() => console.log('[Geofence] setGeofences SUCCESS'))
+      .catch(err => console.error('[Geofence] setGeofences FAILED:', err));
 
     return () => {
       if (isNativePlatform() && TelemetryForeground) {
         TelemetryForeground.clearGeofences()
-          .catch(err => console.warn('[DetalhesViagem] clearGeofences error:', err));
+          .catch(err => console.warn('[Geofence] clearGeofences error:', err));
       }
     };
   }, [originCoords, destinationCoords]);
@@ -332,11 +372,13 @@ export default function DetalhesViagemMotoristaV2() {
       // Apenas geocodificar se não tiver feito ainda (para economizar requisições no polling)
       if (request.origin && !originCoords) {
         const originCoordinates = await geocodeAddress(request.origin);
+        console.log('[Geofence] Origin coords resolved:', originCoordinates);
         setOriginCoords(originCoordinates);
       }
-      
+
       if (request.destination && !destinationCoords) {
         const destinationCoordinates = await geocodeAddress(request.destination);
+        console.log('[Geofence] Destination coords resolved:', destinationCoordinates);
         setDestinationCoords(destinationCoordinates);
       }
       

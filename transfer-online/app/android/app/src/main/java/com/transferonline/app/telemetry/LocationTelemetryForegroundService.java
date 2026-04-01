@@ -403,8 +403,8 @@ public class LocationTelemetryForegroundService extends Service {
         pushLocationToJS(location.getLatitude(), location.getLongitude(),
                 location.getSpeed(), heading, location.getTime());
 
-        // Check origin geofence
-        if (originActive && !originTriggered) {
+        // Check origin geofence (skip if coords are 0,0 — not yet resolved)
+        if (originActive && !originTriggered && originLat != 0 && originLon != 0) {
             float[] results = new float[1];
             Location.distanceBetween(location.getLatitude(), location.getLongitude(),
                     originLat, originLon, results);
@@ -416,8 +416,8 @@ public class LocationTelemetryForegroundService extends Service {
             }
         }
 
-        // Check destination geofence
-        if (destActive && !destTriggered) {
+        // Check destination geofence (skip if coords are 0,0 — not yet resolved)
+        if (destActive && !destTriggered && destLat != 0 && destLon != 0) {
             float[] results = new float[1];
             Location.distanceBetween(location.getLatitude(), location.getLongitude(),
                     destLat, destLon, results);

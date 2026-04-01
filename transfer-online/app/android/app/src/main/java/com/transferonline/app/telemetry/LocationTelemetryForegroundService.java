@@ -21,6 +21,10 @@ import android.util.Log;
 import android.content.pm.ServiceInfo;
 import android.provider.Settings;
 import android.webkit.WebView;
+import android.view.View;
+import android.view.WindowManager;
+import android.graphics.PixelFormat;
+import android.view.Gravity;
 import java.lang.ref.WeakReference;
 
 import androidx.annotation.NonNull;
@@ -659,20 +663,48 @@ public class LocationTelemetryForegroundService extends Service {
                 || Settings.canDrawOverlays(this);
 
         if (hasOverlay) {
-            // PRIMARY (overlay granted): startActivity directly — more reliable on Android 14+
-            try {
-                Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
-                launchIntent.addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK
+            if (Build.VERSION.SDK_INT >= 35) {
+                // Android 15+: overlay must be VISIBLE when starting activity
+                WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+                View overlayView = new View(this);
+                overlayView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    1, 1,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT
+                );
+                params.gravity = Gravity.TOP | Gravity.START;
+                wm.addView(overlayView, params);
+
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    try {
+                        Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                        startActivity(launchIntent);
+                        Log.d(TAG, "startActivity via overlay (Android 15+)");
+                    } catch (Exception e) {
+                        Log.w(TAG, "startActivity with overlay failed: " + e.getMessage());
+                    } finally {
+                        try { wm.removeView(overlayView); } catch (Exception ignored) {}
+                    }
+                }, 100);
+            } else {
+                // Android 10-14: works directly
+                try {
+                    Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                         | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                         | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-                startActivity(launchIntent);
-                Log.d(TAG, "startActivity succeeded (SYSTEM_ALERT_WINDOW granted)");
-            } catch (Exception e) {
-                Log.w(TAG, "startActivity failed even with overlay: " + e.getMessage());
+                    startActivity(launchIntent);
+                    Log.d(TAG, "startActivity direct (Android 10-14)");
+                } catch (Exception e) {
+                    Log.w(TAG, "startActivity failed: " + e.getMessage());
+                }
             }
         } else {
-            // FALLBACK (no overlay): moveTaskToFront
+            // No overlay permission — try moveTaskToFront as last resort
             try {
                 android.app.ActivityManager am =
                         (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
@@ -680,12 +712,7 @@ public class LocationTelemetryForegroundService extends Service {
                     List<android.app.ActivityManager.AppTask> tasks = am.getAppTasks();
                     if (!tasks.isEmpty()) {
                         tasks.get(0).moveToFront();
-                        Log.d(TAG, "moveTaskToFront succeeded (overlay not granted)");
-                    } else {
-                        Intent launchIntent = new Intent(this, com.transferonline.app.MainActivity.class);
-                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        startActivity(launchIntent);
-                        Log.d(TAG, "Started MainActivity directly (no app tasks found)");
+                        Log.d(TAG, "moveTaskToFront fallback");
                     }
                 }
             } catch (Exception e) {
@@ -703,7 +730,15 @@ public class LocationTelemetryForegroundService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
+        PendingIntent contentPI;
+        if (Build.VERSION.SDK_INT >= 34) {
+            android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+            options.setPendingIntentBackgroundActivityStartMode(
+                android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+            contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags, options.toBundle());
+        } else {
+            contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
+        }
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ARRIVAL_CHANNEL_ID)
                 .setContentTitle(title)

@@ -907,7 +907,13 @@ export default function DetalhesViagemMotoristaV2() {
           originCoords.lat, originCoords.lng
         );
         setDistanceToOrigin(distToOrigin);
-        if (distToOrigin <= 100) {
+        if (distToOrigin <= 50) {
+          if (isNativePlatform() && TelemetryForeground) {
+            TelemetryForeground.bringToForeground({
+              title: 'Chegando à origem!',
+              message: 'Toque para ver detalhes da viagem'
+            }).catch(err => console.warn('[Foreground] bringToForeground error:', err));
+          }
           updateStatusMutation.mutateAsync({ newStatus: 'chegou_origem', latitude: location.latitude, longitude: location.longitude });
           setSuccess('🎯 Chegada à origem detectada automaticamente!');
           setTimeout(() => setSuccess(''), 5000);
@@ -920,7 +926,13 @@ export default function DetalhesViagemMotoristaV2() {
           destinationCoords.lat, destinationCoords.lng
         );
         setDistanceToDestination(distToDestination);
-        if (distToDestination <= 100) {
+        if (distToDestination <= 50) {
+          if (isNativePlatform() && TelemetryForeground) {
+            TelemetryForeground.bringToForeground({
+              title: 'Chegou ao destino!',
+              message: 'Toque para registrar despesas'
+            }).catch(err => console.warn('[Foreground] bringToForeground error:', err));
+          }
           updateStatusMutation.mutateAsync({ newStatus: 'chegou_destino', latitude: location.latitude, longitude: location.longitude });
           setShowExpensesDialog(true);
           setSuccess('🎯 Chegada ao destino detectada automaticamente!');

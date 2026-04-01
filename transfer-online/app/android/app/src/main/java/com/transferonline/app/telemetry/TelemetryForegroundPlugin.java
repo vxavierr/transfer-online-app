@@ -1,12 +1,19 @@
 package com.transferonline.app.telemetry;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.os.Build;
+import android.provider.Settings;
 import android.util.Log;
 
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.Plugin;
@@ -156,6 +163,77 @@ public class TelemetryForegroundPlugin extends Plugin {
     @PluginMethod
     public void clearDestination(PluginCall call) {
         LocationTelemetryForegroundService.clearGeofences(getContext());
+        call.resolve();
+    }
+
+    /**
+     * Traz o app ao primeiro plano imediatamente.
+     * Chamado pelo JS quando detecta chegada a 50m do origem ou destino.
+     * Funciona como segunda via de trigger, independente do geofence Java.
+     */
+    @PluginMethod
+    public void bringToForeground(PluginCall call) {
+        String title   = call.getString("title",   "Transfer Online");
+        String message = call.getString("message", "Toque para abrir");
+
+        Log.d(TAG, "bringToForeground called from JS — " + title);
+
+        boolean hasOverlay = Settings.canDrawOverlays(getContext());
+
+        if (hasOverlay) {
+            try {
+                Intent launchIntent = new Intent(getContext(), com.transferonline.app.MainActivity.class);
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                getContext().startActivity(launchIntent);
+                Log.d(TAG, "bringToForeground: startActivity OK");
+            } catch (Exception e) {
+                Log.w(TAG, "bringToForeground: startActivity failed: " + e.getMessage());
+            }
+        }
+
+        // Sempre mostrar notificação como backup visual
+        Intent openApp = new Intent(getContext(), com.transferonline.app.MainActivity.class);
+        openApp.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+
+        PendingIntent contentPI;
+        if (Build.VERSION.SDK_INT >= 34) {
+            android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+            options.setPendingIntentBackgroundActivityStartMode(
+                    android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+            contentPI = PendingIntent.getActivity(getContext(), 2001, openApp, flags, options.toBundle());
+        } else {
+            contentPI = PendingIntent.getActivity(getContext(), 2001, openApp, flags);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    "vista_telemetry_arrival", "Chegada ao destino",
+                    NotificationManager.IMPORTANCE_HIGH);
+            channel.enableVibration(true);
+            NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.createNotificationChannel(channel);
+        }
+
+        Notification notification = new NotificationCompat.Builder(getContext(), "vista_telemetry_arrival")
+                .setContentTitle(title)
+                .setContentText(message)
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(contentPI)
+                .setAutoCancel(true)
+                .setVibrate(new long[]{0, 500, 200, 500})
+                .build();
+
+        NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(2001, notification);
+
         call.resolve();
     }
 }

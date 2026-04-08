@@ -1,0 +1,21 @@
+{
+  "name": "@uhuru/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@uhuru/shared": "workspace:*",
+    "hono": "^4.6.20"
+  },
+  "devDependencies": {
+    "typescript": "*",
+    "bun-types": "^1.1.38"
+  }
+}

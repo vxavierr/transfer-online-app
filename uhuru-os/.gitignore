@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+.turbo/
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Bun
+bun.lockb
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

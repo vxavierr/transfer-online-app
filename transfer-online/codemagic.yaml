@@ -1,0 +1,134 @@
+# codemagic.yaml — Transfer Online
+# Pipeline unificado: Android (Play Store) + iOS (App Store)
+# Trigger: qualquer push na branch main
+# Docs: https://docs.codemagic.io/yaml-quick-start/building-an-ionic-app/
+
+workflows:
+
+  # ─── Android → Play Store ──────────────────────────────────────────────────
+  android-play-store:
+    name: "Android → Play Store"
+    instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    environment:
+      node: "20.0.0"
+      java: "17"
+      groups:
+        - keystore_credentials   # KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+        - google_play            # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd app
+          npm ci
+      - name: Build web
+        script: |
+          cd app
+          npm run build
+      - name: Capacitor sync Android
+        script: |
+          cd app
+          npx cap sync android
+      - name: Build Android AAB (release)
+        script: |
+          cd app/android
+          ./gradlew bundleRelease
+      - name: Sign AAB
+        script: |
+          jarsigner \
+            -keystore $KEYSTORE_PATH \
+            -storepass $KEYSTORE_PASSWORD \
+            -keypass $KEY_PASSWORD \
+            app/android/app/build/outputs/bundle/release/app-release.aab \
+            $KEY_ALIAS
+    artifacts:
+      - app/android/app/build/outputs/bundle/release/app-release.aab
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal          # Internal track para teste → promover para produção no Console
+        submit_as_draft: false
+
+  # ─── iOS → App Store (TestFlight) ──────────────────────────────────────────
+  ios-app-store:
+    name: "iOS → App Store"
+    instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    environment:
+      node: "20.0.0"
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.transferonline.app"
+        XCODE_WORKSPACE: "app/ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+      groups:
+        - ios_signing            # CM_CERTIFICATE, CM_CERTIFICATE_PASSWORD, CM_PROVISIONING_PROFILE
+        - app_store_connect      # APP_STORE_CONNECT_KEY_IDENTIFIER, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_PRIVATE_KEY
+        - apple_credentials      # APPLE_TEAM_ID
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd app
+          npm ci
+      - name: Build web
+        script: |
+          cd app
+          npm run build
+      - name: Capacitor sync iOS
+        script: |
+          cd app
+          npx cap sync ios
+      - name: Install CocoaPods
+        script: |
+          cd app/ios/App
+          pod install
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files $BUNDLE_ID \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Increment build number
+        script: |
+          cd app/ios/App
+          LATEST=$(app-store-connect get-latest-testflight-build-number $BUNDLE_ID 2>/dev/null || echo 0)
+          agvtool new-version -all $((LATEST + 1))
+      - name: Build and archive
+        script: |
+          xcodebuild \
+            -workspace $XCODE_WORKSPACE \
+            -scheme $XCODE_SCHEME \
+            -configuration Release \
+            -archivePath /tmp/App.xcarchive \
+            -destination "generic/platform=iOS" \
+            archive
+      - name: Export IPA
+        script: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath /tmp/App.xcarchive \
+            -exportPath /tmp/App \
+            -exportOptionsPlist app/ios/ExportOptions.plist
+    artifacts:
+      - /tmp/App/**/*.ipa
+      - /tmp/App.xcarchive
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true       # TestFlight automático
+        submit_to_app_store: false       # Mudar para true quando pronto para produção

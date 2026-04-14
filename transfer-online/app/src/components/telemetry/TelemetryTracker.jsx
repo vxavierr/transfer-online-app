@@ -60,6 +60,7 @@ export default function TelemetryTracker({
   const HARD_BRAKE_G_THRESHOLD = 0.45; // 0.45g = ~4.4 m/s² — filters road vibration, catches real braking
   const SHARP_TURN_GYRO_THRESHOLD = 45; // 45 deg/s yaw rate — filters normal turns, catches sharp ones
   const INCIDENT_DEBOUNCE_MS = 15000; // 15s between same incident type — prevents spam
+  const lastBrakeTimestampRef = useRef(0); // Persistent debounce — survives buffer clears
 
   // Throttle refs para evitar atualizações excessivas
   const lastLocationCallbackRef = useRef(0);
@@ -399,8 +400,7 @@ export default function TelemetryTracker({
       const timeDiffSeconds = (posTimestamp - lastPositionRef.current.timestamp) / 1000;
 
       // Debounce: only detect braking if last brake event was > 15s ago
-      const lastBrakeTime = eventBufferRef.current.findLast(e => e.type === 'hard_brake')?.timestamp;
-      const timeSinceLastBrake = lastBrakeTime ? (now - new Date(lastBrakeTime)) : 99999;
+      const timeSinceLastBrake = now - lastBrakeTimestampRef.current;
 
       if (timeSinceLastBrake > INCIDENT_DEBOUNCE_MS) {
         if (accelSamplesRef.current.length >= 5) {
@@ -412,6 +412,7 @@ export default function TelemetryTracker({
             statsRef.current.hardBrakes++;
             logEvent('hard_brake', latitude, longitude, currentSpeedKmh, gForce,
               JSON.stringify({ source: 'accelerometer', gForce: gForce.toFixed(3) }));
+            lastBrakeTimestampRef.current = now;
           }
         } else if (timeDiffSeconds > 0 && timeDiffSeconds < HARD_BRAKE_MAX_INTERVAL_S) {
           // GPS fallback
@@ -422,6 +423,7 @@ export default function TelemetryTracker({
               statsRef.current.hardBrakes++;
               logEvent('hard_brake', latitude, longitude, currentSpeedKmh, deceleration,
                 JSON.stringify({ source: 'gps' }));
+              lastBrakeTimestampRef.current = now;
             }
           }
         }

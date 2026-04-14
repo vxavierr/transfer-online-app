@@ -20,7 +20,9 @@ const SensorService = {
     // Tentativa 1: Generic Sensor API (Android WebView)
     if (typeof Accelerometer !== 'undefined') {
       try {
-        const accel = new Accelerometer({ frequency: 20 });
+        const accel = typeof LinearAccelerationSensor !== 'undefined'
+          ? new LinearAccelerationSensor({ frequency: 20 })
+          : new Accelerometer({ frequency: 20 });
         let gyro = null;
 
         if (typeof Gyroscope !== 'undefined') {
@@ -51,7 +53,7 @@ const SensorService = {
 
         this._accel = accel;
         this._gyro = gyro;
-        console.log('[SensorService] Started via Generic Sensor API');
+        console.log(`[SensorService] Started via ${typeof LinearAccelerationSensor !== 'undefined' ? 'LinearAccelerationSensor' : 'Accelerometer'} (Generic Sensor API)`);
         return true;
       } catch (e) {
         console.warn('[SensorService] Generic Sensor API failed:', e.message);

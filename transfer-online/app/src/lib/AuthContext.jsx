@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
+import { isNativePlatform } from '@/native';
 
 const AuthContext = createContext();
 
@@ -145,16 +146,32 @@ export const AuthProvider = ({ children }) => {
   };
 
   const navigateToLogin = (returnUrl) => {
-    const target = returnUrl || window.location.pathname + window.location.search;
-    const accessPortalUrl = `/AccessPortal?returnUrl=${encodeURIComponent(target)}`;
-    
+    // On native, window.location.pathname is always '/' — not useful as returnUrl.
+    // Only use it as fallback on web where it reflects the actual route.
+    const target = returnUrl || (!isNativePlatform() ? window.location.pathname + window.location.search : null);
+    const accessPortalUrl = `/AccessPortal${target ? `?returnUrl=${encodeURIComponent(target)}` : ''}`;
+
     if (window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__) {
       window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__(target);
+    } else if (isNativePlatform()) {
+      // NativeAuthNavigator (in App.jsx) registers the bridge after Router mounts.
+      // If it's not ready yet, queue the navigation and retry on the next tick.
+      console.warn('[AuthContext] navigateToLogin called before __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__ was registered — queuing retry.');
+      const retryNativeNav = (attempt = 0) => {
+        if (window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__) {
+          window.__NATIVE_NAVIGATE_TO_ACCESS_PORTAL__(target);
+        } else if (attempt < 20) {
+          setTimeout(() => retryNativeNav(attempt + 1), 50);
+        } else {
+          // Bridge never registered — last-resort: let the router handle a hash change
+          // which avoids a full reload unlike window.location.replace().
+          console.error('[AuthContext] __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__ never registered after retries. Falling back to hash navigation.');
+          window.location.hash = accessPortalUrl;
+        }
+      };
+      setTimeout(() => retryNativeNav(), 0);
     } else {
-      // Fallback: should not reach here in native — __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__
-      // is registered by NativeAuthNavigator in App.jsx on Capacitor platforms.
-      // Using replace() instead of href assignment to avoid adding a spurious history entry.
-      console.warn('[AuthContext] navigateToLogin fallback hit — __NATIVE_NAVIGATE_TO_ACCESS_PORTAL__ not set. Using window.location.replace().');
+      // Web fallback: full page replace is acceptable on web (no React Router state loss concern).
       window.location.replace(accessPortalUrl);
     }
   };

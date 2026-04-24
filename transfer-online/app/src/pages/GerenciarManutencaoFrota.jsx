@@ -4,13 +4,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertCircle, Car, ClipboardList, ShieldCheck, Wrench } from 'lucide-react';
+import { AlertCircle, Car, ClipboardList, Fuel, ShieldCheck, Wrench } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import MaintenanceOverview from '@/components/fleet-maintenance/MaintenanceOverview';
 import FleetVehiclesTab from '@/components/fleet-maintenance/FleetVehiclesTab';
 import MaintenancePlansTab from '@/components/fleet-maintenance/MaintenancePlansTab';
 import MaintenanceRecordsTab from '@/components/fleet-maintenance/MaintenanceRecordsTab';
 import MaintenanceProvidersTab from '@/components/fleet-maintenance/MaintenanceProvidersTab';
+import FuelRecordsTab from '@/components/fleet-maintenance/FuelRecordsTab';
 import { calculateNextDue } from '@/components/fleet-maintenance/maintenanceUtils';
 
 export default function GerenciarManutencaoFrota() {
@@ -59,6 +60,32 @@ export default function GerenciarManutencaoFrota() {
     initialData: []
   });
 
+  // Buscar motoristas do fornecedor e seus veículos (DriverVehicle)
+  const { data: supplierDrivers = [] } = useQuery({
+    queryKey: ['supplierDriversForFleet', supplierId],
+    queryFn: () => base44.entities.Driver.filter({ supplier_id: supplierId }),
+    enabled: !!supplierId,
+    initialData: []
+  });
+
+  const driverIds = supplierDrivers.map(d => d.id);
+
+  const { data: driverVehicles = [] } = useQuery({
+    queryKey: ['driverVehiclesForFleet', driverIds.join(',')],
+    queryFn: async () => {
+      if (driverIds.length === 0) return [];
+      const allVehicles = [];
+      // Buscar em lotes para evitar queries muito grandes
+      for (const dId of driverIds) {
+        const vehicles = await base44.entities.DriverVehicle.filter({ driver_id: dId });
+        allVehicles.push(...vehicles);
+      }
+      return allVehicles;
+    },
+    enabled: driverIds.length > 0,
+    initialData: []
+  });
+
   const { data: maintenanceProviders = [] } = useQuery({
     queryKey: ['fleetMaintenanceProviders', supplierId],
     queryFn: () => base44.entities.FleetMaintenanceProvider.filter({ supplier_id: supplierId }, '-updated_date'),
@@ -85,6 +112,7 @@ export default function GerenciarManutencaoFrota() {
     queryClient.invalidateQueries({ queryKey: ['fleetMaintenanceProviders', supplierId] });
     queryClient.invalidateQueries({ queryKey: ['fleetMaintenancePlans', supplierId] });
     queryClient.invalidateQueries({ queryKey: ['fleetMaintenanceRecords', supplierId] });
+    queryClient.invalidateQueries({ queryKey: ['supplierFuelRecords', supplierId] });
   };
 
   const saveFleetVehicle = async (data) => {
@@ -261,19 +289,21 @@ export default function GerenciarManutencaoFrota() {
         )}
 
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0 lg:grid-cols-5">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0 lg:grid-cols-6">
             <TabsTrigger value="overview" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white"><ShieldCheck className="mr-2 h-4 w-4" /> Visão geral</TabsTrigger>
             <TabsTrigger value="fleet" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white"><Car className="mr-2 h-4 w-4" /> Frota</TabsTrigger>
             <TabsTrigger value="plans" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white"><Wrench className="mr-2 h-4 w-4" /> Planos</TabsTrigger>
             <TabsTrigger value="records" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white"><ClipboardList className="mr-2 h-4 w-4" /> Registros</TabsTrigger>
             <TabsTrigger value="providers" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-blue-600 data-[state=active]:text-white"><Wrench className="mr-2 h-4 w-4" /> Prestadores</TabsTrigger>
+            <TabsTrigger value="fuel" className="rounded-xl border border-gray-200 bg-white px-4 py-3 data-[state=active]:bg-orange-600 data-[state=active]:text-white"><Fuel className="mr-2 h-4 w-4" /> Abastecimentos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview"><MaintenanceOverview vehicles={fleetVehicles} plans={maintenancePlans} records={maintenanceRecords} providers={maintenanceProviders} /></TabsContent>
-          <TabsContent value="fleet"><FleetVehiclesTab vehicles={fleetVehicles} vehicleTypes={vehicleTypes} onSave={saveFleetVehicle} onDelete={deleteFleetVehicle} /></TabsContent>
+          <TabsContent value="fleet"><FleetVehiclesTab vehicles={fleetVehicles} vehicleTypes={vehicleTypes} onSave={saveFleetVehicle} onDelete={deleteFleetVehicle} driverVehicles={driverVehicles} drivers={supplierDrivers} /></TabsContent>
           <TabsContent value="plans"><MaintenancePlansTab vehicles={fleetVehicles} providers={maintenanceProviders} plans={maintenancePlans} onSave={savePlan} onDelete={deletePlan} /></TabsContent>
           <TabsContent value="records"><MaintenanceRecordsTab vehicles={fleetVehicles} plans={maintenancePlans} providers={maintenanceProviders} records={maintenanceRecords} onSave={saveRecord} onDelete={deleteRecord} /></TabsContent>
           <TabsContent value="providers"><MaintenanceProvidersTab providers={maintenanceProviders} onSave={saveProvider} onDelete={deleteProvider} /></TabsContent>
+          <TabsContent value="fuel"><FuelRecordsTab supplierId={supplierId} drivers={supplierDrivers} /></TabsContent>
         </Tabs>
       </div>
     </div>

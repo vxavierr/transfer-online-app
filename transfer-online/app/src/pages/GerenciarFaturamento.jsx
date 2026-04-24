@@ -459,6 +459,21 @@ export default function GerenciarFaturamento() {
     }
   });
 
+  const parseDateOnly = (dateString) => {
+    if (!dateString) return null;
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const formatDateOnly = (dateString) => {
+    const parsedDate = parseDateOnly(dateString);
+    return parsedDate ? format(parsedDate, 'dd/MM/yyyy', { locale: ptBR }) : '-';
+  };
+
+  const formatPrice = (price) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price || 0);
+  };
+
   const filteredInvoices = useMemo(() => {
     return invoices.filter(inv => {
       if (invoiceFilters.finance_status !== 'all' && inv.finance_status !== invoiceFilters.finance_status) return false;
@@ -466,11 +481,11 @@ export default function GerenciarFaturamento() {
         if (inv.status === 'paga') return false;
       }
 
-      if (invoiceFilters.start && new Date(inv.created_date) < parseDateOnly(invoiceFilters.start)) return false;
-      if (invoiceFilters.end) {
-        const endDate = parseDateOnly(invoiceFilters.end);
-        endDate.setHours(23, 59, 59, 999);
-        if (new Date(inv.created_date) > endDate) return false;
+      if (invoiceFilters.start || invoiceFilters.end) {
+        const d = inv.due_date ? parseDateOnly(inv.due_date) : null;
+        if (!d) return false;
+        if (invoiceFilters.start && d < parseDateOnly(invoiceFilters.start)) return false;
+        if (invoiceFilters.end) { const e = parseDateOnly(invoiceFilters.end); if (e) { e.setHours(23,59,59,999); if (d > e) return false; } }
       }
 
       return true;
@@ -921,23 +936,7 @@ export default function GerenciarFaturamento() {
     return labels[type] || type;
   };
 
-  const parseDateOnly = (dateString) => {
-    if (!dateString) return null;
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  };
-
-  const formatDateOnly = (dateString) => {
-    const parsedDate = parseDateOnly(dateString);
-    return parsedDate ? format(parsedDate, 'dd/MM/yyyy', { locale: ptBR }) : '-';
-  };
-
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(price || 0);
-  };
+  // parseDateOnly, formatDateOnly, and formatPrice are defined above the filteredInvoices useMemo
 
   if (isCheckingAuth) {
     return (
@@ -1173,7 +1172,7 @@ export default function GerenciarFaturamento() {
                   </div>
                   <div className="flex flex-wrap gap-2 items-center">
                     <div className="flex items-center gap-2 border rounded-md p-1 bg-white">
-                      <Calendar className="w-4 h-4 text-gray-500 ml-2" />
+                      <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">Vencimento:</span>
                       <Input
                         type="date"
                         className="border-0 h-8 w-32 text-xs"

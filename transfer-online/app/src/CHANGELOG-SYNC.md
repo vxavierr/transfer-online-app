@@ -23,6 +23,28 @@ O João consulta antes de cada exportação.
 
 ## Registro
 
+### [2026-03-23] — Correção de telemetria, GPS centralizado e ETA inline
+
+**Arquivos alterados:**
+- native/index.js (modificado — adicionado GeoService.clearWatch)
+- functions/updateDriverLocation.js (reescrito — ETA inline via Google Distance Matrix, SDK 0.8.21, removida dependência de calculateETA)
+- components/telemetry/TelemetryTracker.jsx (reescrito — centraliza GPS via GeoService, callbacks onLocationUpdate/onGpsStatusChange, throttle de 5s para UI e 10s para backend)
+- pages/DetalhesViagemMotoristaV2.jsx (modificado — removida lógica duplicada de watchPosition/startContinuousTracking/stopContinuousTracking/updateLocationState, migrado navigator.geolocation para GeoService)
+
+**Impacto na sincronização:**
+- [x] native/index.js alterado — João deve adicionar clearWatch ao bridge Capacitor do GeoService
+- [x] Todas as chamadas navigator.geolocation migradas para GeoService (compatível com nativo)
+- [ ] Nenhuma nova página
+- [ ] Nenhuma mudança em App.jsx / Layout.jsx
+- [ ] Nenhuma nova dependência
+
+**Notas para João:**
+- O GeoService agora tem 3 métodos: getCurrentPosition, watchPosition (com errorCallback), clearWatch
+- TelemetryTracker agora é o ÚNICO componente que faz watchPosition — não há mais GPS duplicado
+- updateDriverLocation não depende mais de calculateETA (elimina erro 404)
+
+---
+
 ### [2026-03-19] — Migração completa para AccessPortal (login interno)
 
 **Arquivos alterados:**

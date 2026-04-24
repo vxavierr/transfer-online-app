@@ -67,6 +67,49 @@ const GeoService = {
   },
 
   /**
+   * Solicita permissão de localização em background (ACCESS_BACKGROUND_LOCATION).
+   * No Android 11+, o sistema não mostra "Permitir sempre" no diálogo padrão —
+   * este método dispara o fluxo correto via background-geolocation plugin.
+   *
+   * Fluxo:
+   *   1. Abre um watcher temporário com requestPermissions: true
+   *   2. O plugin pede ACCESS_BACKGROUND_LOCATION ao sistema
+   *   3. Android 10: mostra "Permitir sempre" no próprio diálogo
+   *   4. Android 11+: mostra tela de configurações com opção "Permitir sempre"
+   *   5. Watcher é removido imediatamente após o pedido
+   */
+  async requestBackgroundPermission() {
+    if (!Capacitor.isNativePlatform()) return 'granted';
+    const BackgroundGeolocation = getBackgroundGeolocation();
+    if (!BackgroundGeolocation) return 'denied';
+
+    let watcherId = null;
+    try {
+      await new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 3000); // timeout de segurança
+        BackgroundGeolocation.addWatcher(
+          { requestPermissions: true, stale: true, distanceFilter: 999999 },
+          async () => {
+            clearTimeout(timeout);
+            resolve();
+          }
+        ).then(id => { watcherId = id; });
+      });
+    } catch (e) {
+      console.warn('[GeoService] Background permission request failed:', e);
+    } finally {
+      if (watcherId) {
+        try {
+          await BackgroundGeolocation.removeWatcher({ id: watcherId });
+        } catch (e) {
+          console.warn('[GeoService] Falha ao remover watcher temporário de permissão de background:', e.message ?? e);
+        }
+      }
+    }
+    return 'granted';
+  },
+
+  /**
    * Posição atual — substitui navigator.geolocation.getCurrentPosition
    * Retorna objeto com propriedade coords compatível com a API web.
    */
@@ -85,8 +128,17 @@ const GeoService = {
 
   /**
    * Watch contínuo para foreground — substitui navigator.geolocation.watchPosition
+   *
+   * Assinatura espelha a API do navegador intencionalmente:
+   *   watchPosition(callback, errorCallback, options)
+   *
+   * @param {Function} callback       - Chamado com cada posição: (position) => void
+   * @param {Function|null} errorCallback - Chamado em erros de GPS: (error) => void (pode ser null)
+   * @param {Object}   [options={}]   - enableHighAccuracy, timeout, maximumAge
+   * @returns {Promise<string|number>} watchId — string em nativo, number na web — use em clearWatch()
+   *
    * IMPORTANTE: esta função é async — em nativo retorna uma Promise com o watchId.
-   * Retorna watchId string (nativo) ou number (web) para usar em clearWatch.
+   * Os callers devem usar `await GeoService.watchPosition(...)`.
    */
   async watchPosition(callback, errorCallback, options = {}) {
     if (Capacitor.isNativePlatform()) {
@@ -97,6 +149,7 @@ const GeoService = {
         },
         (position, err) => {
           if (err) {
+            console.warn('[GeoService] watchPosition error:', err.code ?? err.message ?? err);
             if (errorCallback) errorCallback(err);
             return;
           }
@@ -114,9 +167,17 @@ const GeoService = {
    * Aceita tanto watchId string (nativo) quanto number (web).
    */
   async clearWatch(watchId) {
-    if (watchId === null || watchId === undefined) return;
+    if (watchId === null || watchId === undefined) {
+      console.warn('[GeoService] clearWatch chamado com watchId nulo/undefined — ignorado');
+      return;
+    }
     if (Capacitor.isNativePlatform()) {
-      await Geolocation.clearWatch({ id: watchId });
+      try {
+        await Geolocation.clearWatch({ id: watchId });
+        console.warn('[GeoService] clearWatch nativo concluído para watchId:', watchId);
+      } catch (e) {
+        console.warn('[GeoService] Falha ao limpar watch nativo (id:', watchId, '):', e.message ?? e);
+      }
     } else {
       navigator.geolocation.clearWatch(watchId);
     }

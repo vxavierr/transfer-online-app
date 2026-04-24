@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { User, Lock, AlertCircle, CheckCircle, Loader2, Phone, FileText, FileCheck, DollarSign, Trash2 } from 'lucide-react';
+import { User, Lock, AlertCircle, CheckCircle, Loader2, Phone, FileText, FileCheck, DollarSign, Trash2, Car } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
@@ -23,6 +23,7 @@ import PhoneInputWithCountry from '@/components/ui/PhoneInputWithCountry';
 import { useLocation, useNavigate } from 'react-router-dom';
 import DriverDocuments from '@/components/driver/DriverDocuments';
 import DriverPayments from '@/components/driver/DriverPayments';
+import DriverFleetTab from '@/components/driver/DriverFleetTab';
 
 export default function MeusDados() {
   const [user, setUser] = useState(null);
@@ -232,7 +233,7 @@ export default function MeusDados() {
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-          <TabsList className={`grid w-full ${isDriver ? 'grid-cols-4' : 'grid-cols-2'}`}>
+          <TabsList className={`grid w-full ${isDriver ? 'grid-cols-5' : 'grid-cols-2'}`}>
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="w-4 h-4" />
               <span className="hidden sm:inline">Perfil</span>
@@ -247,6 +248,10 @@ export default function MeusDados() {
                 <TabsTrigger value="payments" className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4" />
                   <span className="hidden sm:inline">Financeiro</span>
+                </TabsTrigger>
+                <TabsTrigger value="fleet" className="flex items-center gap-2">
+                  <Car className="w-4 h-4" />
+                  <span className="hidden sm:inline">Frota</span>
                 </TabsTrigger>
               </>
             )}
@@ -433,6 +438,10 @@ export default function MeusDados() {
 
               <TabsContent value="payments">
                 <DriverPayments user={user} />
+              </TabsContent>
+
+              <TabsContent value="fleet">
+                <DriverFleetTab user={user} />
               </TabsContent>
             </>
           )}

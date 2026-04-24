@@ -378,8 +378,14 @@ export default function GerenciarPagamentos() {
   };
 
   const handleConfirmDriverPayment = () => {
+    // Build type hints array matching selected payout IDs
+    const payoutTypes = selectedDriverPayouts.map(id => {
+      const payout = filteredDriverPayouts.find(p => p.id === id);
+      return payout?.type || null;
+    });
     markDriversAsPaidMutation.mutate({
       payout_ids: selectedDriverPayouts,
+      payout_types: payoutTypes,
       notes: driverPaymentNotes
     });
   };
@@ -709,7 +715,7 @@ export default function GerenciarPagamentos() {
           onOpenChange={setShowEditDriverPayoutDialog}
           payout={editingPayout}
           onSave={handleSaveDriverPayout}
-          isLoading={updateDriverPayoutMutation.isLoading}
+          isLoading={updateDriverPayoutMutation.isPending}
         />
 
         {/* DIALOG MOTORISTAS */}
@@ -731,7 +737,8 @@ export default function GerenciarPagamentos() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowDriverPaymentDialog(false)}>Cancelar</Button>
-              <Button onClick={handleConfirmDriverPayment} disabled={markDriversAsPaidMutation.isLoading}>
+              <Button onClick={handleConfirmDriverPayment} disabled={markDriversAsPaidMutation.isPending}>
+                {markDriversAsPaidMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Confirmar
               </Button>
             </DialogFooter>
@@ -757,7 +764,8 @@ export default function GerenciarPagamentos() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCoordinatorPaymentDialog(false)}>Cancelar</Button>
-              <Button onClick={handleConfirmCoordinatorPayment} disabled={markCoordinatorsAsPaidMutation.isLoading}>
+              <Button onClick={handleConfirmCoordinatorPayment} disabled={markCoordinatorsAsPaidMutation.isPending}>
+                {markCoordinatorsAsPaidMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Confirmar
               </Button>
             </DialogFooter>
@@ -813,10 +821,10 @@ export default function GerenciarPagamentos() {
               <Button variant="outline" onClick={() => setShowLaunchCoordinatorDialog(false)}>Cancelar</Button>
               <Button 
                 onClick={() => createCoordinatorPayoutMutation.mutate(newCoordinatorPayout)} 
-                disabled={createCoordinatorPayoutMutation.isLoading || !newCoordinatorPayout.coordinator_id || !newCoordinatorPayout.amount}
+                disabled={createCoordinatorPayoutMutation.isPending || !newCoordinatorPayout.coordinator_id || !newCoordinatorPayout.amount}
                 className="bg-green-600 hover:bg-green-700"
               >
-                {createCoordinatorPayoutMutation.isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Lançar'}
+                {createCoordinatorPayoutMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Lançar'}
               </Button>
             </DialogFooter>
           </DialogContent>

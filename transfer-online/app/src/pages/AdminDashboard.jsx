@@ -199,7 +199,8 @@ export default function AdminDashboard() {
       );
     },
     enabled: !isCheckingAuth,
-    refetchInterval: 15000,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
     initialData: []
   });
 

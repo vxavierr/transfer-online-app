@@ -876,12 +876,36 @@ export default function GerenciarFornecedores() {
                       </Label>
                     </div>
                     <p className="text-xs text-gray-600 ml-6 mt-1">
-                      Permite que o fornecedor cadastre parceiros e subcontrate viagens quando não puder atender com frota própria.
+                       Permite que o fornecedor cadastre parceiros e subcontrate viagens quando não puder atender com frota própria.
+                     </p>
+                     </div>
+
+                     <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 mt-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="feature_payables_management"
+                        checked={formData.features?.payables_management || false}
+                        onChange={(e) => setFormData({ 
+                          ...formData, 
+                          features: { 
+                            ...formData.features, 
+                            payables_management: e.target.checked 
+                          } 
+                        })}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <Label htmlFor="feature_payables_management" className="cursor-pointer font-medium text-gray-900">
+                        Gestão de Contas a Pagar
+                      </Label>
+                    </div>
+                    <p className="text-xs text-gray-600 ml-6 mt-1">
+                      Habilita o módulo completo de contas a pagar com lançamentos manuais, categorias de despesas e fluxo de caixa comparativo.
                     </p>
                     </div>
                     </div>
 
-                <div className="space-y-4">
+                    <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="notes">Observações Internas</Label>
                     <Textarea

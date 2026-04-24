@@ -70,6 +70,7 @@ import DashboardGrid from '@/components/dashboard/DashboardGrid';
 import { Pagination } from '@/components/ui/Pagination';
 import RequestTable from '@/components/supplier/RequestTable';
 import RequestFilters from '@/components/supplier/RequestFilters';
+import PendingAcceptanceBanner from '@/components/supplier/PendingAcceptanceBanner';
 
 // Lazy Load
 const ServiceOrderPDFDialog = React.lazy(() => import('../components/ServiceOrderPDFDialog'));
@@ -112,6 +113,8 @@ export default function MinhasSolicitacoesFornecedor() {
   const [acceptVehicleModel, setAcceptVehicleModel] = useState('');
   const [acceptVehiclePlate, setAcceptVehiclePlate] = useState('');
   const [acceptDriverPayout, setAcceptDriverPayout] = useState('');
+  const [acceptIsReceptiveNeeded, setAcceptIsReceptiveNeeded] = useState(false);
+  const [acceptReceptivePerformedBy, setAcceptReceptivePerformedBy] = useState('driver');
   
   const [showPDFDialog, setShowPDFDialog] = useState(false);
   const [requestToExport, setRequestToExport] = useState(null);
@@ -750,7 +753,7 @@ export default function MinhasSolicitacoesFornecedor() {
   useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter, vehicleTypeFilter, clientFilter, driverFilter, costCenterFilter, dateFilter, tripTypeFilter, periodFilter]);
   
   // Categorias de listas
-  const pendingResponseRequests = filteredServiceRequests.filter(r => r.type === 'platform' && r.supplier_response_status === 'aguardando_resposta');
+  const pendingResponseRequests = allTrips.filter(r => r.type === 'platform' && r.supplier_response_status === 'aguardando_resposta');
   const needDriverRequests = filteredServiceRequests.filter(r => {
     const isMissing = (!r.driver_name || !r.driver_phone || !r.vehicle_model || !r.vehicle_plate);
     if (r.type === 'own') return (r.status === 'pendente' || r.status === 'confirmada') && isMissing && r.status !== 'concluida' && r.status !== 'cancelada';
@@ -786,6 +789,8 @@ export default function MinhasSolicitacoesFornecedor() {
     setRefusalReason('');
     setPriceToConfirm(request.chosen_supplier_cost || '');
     setAssignDriverNow(false);
+    setAcceptIsReceptiveNeeded(request.is_receptive_needed || false);
+    setAcceptReceptivePerformedBy(request.receptive_performed_by || 'driver');
     setError('');
     setShowResponseDialog(true);
   };
@@ -798,13 +803,16 @@ export default function MinhasSolicitacoesFornecedor() {
       driverData = { driver_id: acceptDriverId, driver_name: acceptDriverName, driver_phone: acceptDriverPhone, driver_photo_url: driver?.photo_url, vehicle_model: acceptVehicleModel, vehicle_plate: acceptVehiclePlate, driver_payout_amount: acceptDriverPayout ? parseFloat(acceptDriverPayout) : null };
     }
     
-    // Simulação da Mutation (substituir pela real se necessário, mas mantendo a lógica simples aqui)
     base44.functions.invoke('supplierAcceptRejectRequest', {
         serviceRequestId: selectedRequest.id,
         accept: responseType === 'accept',
         refusalReason: refusalReason,
-        price: responseType === 'accept' ? priceToConfirm : null,
-        driverData
+        updatedPrice: responseType === 'accept' ? parseFloat(priceToConfirm) || null : null,
+        driverData,
+        receptiveData: responseType === 'accept' ? {
+          is_receptive_needed: acceptIsReceptiveNeeded,
+          receptive_performed_by: acceptIsReceptiveNeeded ? acceptReceptivePerformedBy : null
+        } : null
     }).then(() => {
         queryClient.invalidateQueries(['supplierServiceRequests']);
         setSuccess('Resposta enviada!');
@@ -813,42 +821,125 @@ export default function MinhasSolicitacoesFornecedor() {
     }).catch(e => setError(e.message));
   };
 
-  const handleOpenDriverInfoDialog = (request) => {
+  const handleOpenDriverInfoDialog = async (request) => {
     setSelectedRequest(request);
-    // Reset fields logic here (same as original)
     setDriverName(request.driver_name || '');
     setDriverPhone(request.driver_phone || '+55');
     setVehicleModel(request.vehicle_model || '');
     setVehiclePlate(request.vehicle_plate || '');
+    setDriverPayoutAmount(request.driver_payout_amount || '');
+    setDriverVehicles([]);
+    setSelectedDriverVehicleId('');
+
+    // Se já tem motorista cadastrado atribuído, carregar veículos
+    if (request.driver_id) {
+      setSelectedDriverId(request.driver_id);
+      try {
+        const vehs = await base44.entities.DriverVehicle.filter({ driver_id: request.driver_id, active: true });
+        setDriverVehicles(vehs);
+      } catch (e) { console.warn('Erro ao carregar veículos:', e); }
+    } else {
+      setSelectedDriverId('new');
+    }
     setShowDriverInfoDialog(true);
   };
 
-  const handleDriverSelection = (driverId) => {
+  const handleDriverSelection = async (driverId) => {
     setSelectedDriverId(driverId);
-    if (driverId !== 'new') {
-        const d = drivers.find(drv => drv.id === driverId);
-        if (d) { setDriverName(d.name); setDriverPhone(d.phone_number); }
+    setDriverVehicles([]);
+    setSelectedDriverVehicleId('');
+    if (driverId !== 'new' && driverId !== 'casual_driver') {
+      const d = drivers.find(drv => drv.id === driverId);
+      if (d) {
+        setDriverName(d.name);
+        setDriverPhone(d.phone_number);
+        // Buscar veículos associados ao motorista
+        try {
+          const vehs = await base44.entities.DriverVehicle.filter({ driver_id: driverId, active: true });
+          setDriverVehicles(vehs);
+          // Auto-selecionar veículo padrão ou primeiro
+          const defaultVeh = vehs.find(v => v.is_default) || vehs[0];
+          if (defaultVeh) {
+            setSelectedDriverVehicleId(defaultVeh.id);
+            setVehicleModel(defaultVeh.vehicle_model);
+            setVehiclePlate(defaultVeh.vehicle_plate);
+          } else {
+            setVehicleModel('');
+            setVehiclePlate('');
+          }
+        } catch (e) {
+          console.warn('Erro ao carregar veículos do motorista:', e);
+          setVehicleModel('');
+          setVehiclePlate('');
+        }
+      }
+    } else {
+      setDriverName('');
+      setDriverPhone('+55');
+      setVehicleModel('');
+      setVehiclePlate('');
+    }
+  };
+
+  const handleDriverVehicleSelection = (vehicleId) => {
+    setSelectedDriverVehicleId(vehicleId);
+    if (vehicleId === 'manual') {
+      setVehicleModel('');
+      setVehiclePlate('');
+      return;
+    }
+    const veh = driverVehicles.find(v => v.id === vehicleId);
+    if (veh) {
+      setVehicleModel(veh.vehicle_model);
+      setVehiclePlate(veh.vehicle_plate);
+    }
+  };
+
+  // Handler para seleção de motorista no dialog de aceite
+  const handleAcceptDriverSelection = async (driverId) => {
+    setAcceptDriverId(driverId);
+    if (driverId) {
+      const d = drivers.find(drv => drv.id === driverId);
+      if (d) {
+        setAcceptDriverName(d.name);
+        setAcceptDriverPhone(d.phone_number);
+        try {
+          const vehs = await base44.entities.DriverVehicle.filter({ driver_id: driverId, active: true });
+          const defaultVeh = vehs.find(v => v.is_default) || vehs[0];
+          if (defaultVeh) {
+            setAcceptVehicleModel(defaultVeh.vehicle_model);
+            setAcceptVehiclePlate(defaultVeh.vehicle_plate);
+          } else {
+            setAcceptVehicleModel('');
+            setAcceptVehiclePlate('');
+          }
+        } catch (e) {
+          console.warn('Erro ao carregar veículos:', e);
+        }
+      }
     }
   };
 
   const handleSaveDriverInfo = async (isAutoSave = false) => {
       setIsSavingDriverInfo(true);
       try {
+          const payoutValue = driverPayoutAmount ? parseFloat(driverPayoutAmount) : null;
           const payload = { 
               serviceRequestId: selectedRequest.id, 
               driver_id: (selectedDriverId !== 'new' && selectedDriverId !== 'casual_driver') ? selectedDriverId : null,
               driver_name: driverName, 
               driver_phone: driverPhone, 
               vehicle_model: vehicleModel, 
-              vehicle_plate: vehiclePlate 
+              vehicle_plate: vehiclePlate,
+              driver_payout_amount: payoutValue
           };
-          
+
           if (selectedRequest.type === 'own') {
-              await base44.entities.SupplierOwnBooking.update(selectedRequest.id, { driver_name: driverName, driver_phone: driverPhone, vehicle_model: vehicleModel, vehicle_plate: vehiclePlate });
-              if(!isAutoSave) setSuccess('Salvo!');
-              queryClient.invalidateQueries(['supplierOwnBookings']);
+               await base44.entities.SupplierOwnBooking.update(selectedRequest.id, { driver_name: driverName, driver_phone: driverPhone, vehicle_model: vehicleModel, vehicle_plate: vehiclePlate, driver_payout_amount: payoutValue });
+               if(!isAutoSave) setSuccess('Salvo!');
+               queryClient.invalidateQueries(['supplierOwnBookings']);
           } else if (selectedRequest.type === 'direct_booking') {
-              await base44.entities.Booking.update(selectedRequest.id, { driver_name: driverName, driver_phone: driverPhone, vehicle_model: vehicleModel, vehicle_plate: vehiclePlate });
+               await base44.entities.Booking.update(selectedRequest.id, { driver_name: driverName, driver_phone: driverPhone, vehicle_model: vehicleModel, vehicle_plate: vehiclePlate, driver_payout_amount: payoutValue });
               if(!isAutoSave) setSuccess('Salvo!');
               queryClient.invalidateQueries(['supplierDirectBookings']);
           } else if (selectedRequest.type === 'event_trip') {
@@ -1156,6 +1247,15 @@ export default function MinhasSolicitacoesFornecedor() {
           )}
         </div>
 
+        {/* Banner de Viagens Aguardando Aceite */}
+        <PendingAcceptanceBanner
+          trips={pendingResponseRequests}
+          onAccept={(r) => handleOpenResponseDialog(r, 'accept')}
+          onReject={(r) => handleOpenResponseDialog(r, 'reject')}
+          onViewDetails={handleViewDetails}
+          formatPrice={formatPrice}
+        />
+
         {/* 3. Alertas de Conflitos */}
         {driverConflicts.length > 0 && (
           <Alert variant="destructive" className="mb-6">
@@ -1436,19 +1536,60 @@ export default function MinhasSolicitacoesFornecedor() {
                         )}
                         {responseType === 'accept' && (
                             <div className="space-y-4">
-                                <Label>Confirmar Valor</Label>
-                                <Input type="number" value={priceToConfirm} onChange={e => setPriceToConfirm(e.target.value)} />
+                                <div>
+                                  <Label>Confirmar Valor</Label>
+                                  <Input type="number" value={priceToConfirm} onChange={e => setPriceToConfirm(e.target.value)} />
+                                </div>
+
+                                {/* Pergunta de Receptivo */}
+                                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox 
+                                      checked={acceptIsReceptiveNeeded} 
+                                      onCheckedChange={setAcceptIsReceptiveNeeded} 
+                                    />
+                                    <Label className="font-bold text-indigo-900 cursor-pointer">Motorista faz receptivo no aeroporto?</Label>
+                                  </div>
+                                  {acceptIsReceptiveNeeded && (
+                                    <div>
+                                      <Label className="text-xs text-indigo-700 mb-1 block">Quem faz o receptivo?</Label>
+                                      <Select value={acceptReceptivePerformedBy} onValueChange={setAcceptReceptivePerformedBy}>
+                                        <SelectTrigger className="bg-white">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="driver">Motorista</SelectItem>
+                                          <SelectItem value="contracted_company">Empresa Contratada</SelectItem>
+                                          <SelectItem value="other_means">Outros Meios</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  )}
+                                </div>
+
                                 <div className="flex items-center gap-2">
                                     <Checkbox checked={assignDriverNow} onCheckedChange={setAssignDriverNow} />
                                     <Label>Atribuir Motorista Agora?</Label>
                                 </div>
                                 {assignDriverNow && (
-                                    <Select value={acceptDriverId} onValueChange={setAcceptDriverId}>
+                                    <div className="space-y-3 bg-gray-50 border rounded-lg p-3">
+                                      <Select value={acceptDriverId} onValueChange={handleAcceptDriverSelection}>
                                         <SelectTrigger><SelectValue placeholder="Selecione Motorista" /></SelectTrigger>
                                         <SelectContent>
                                             {drivers.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                                         </SelectContent>
-                                    </Select>
+                                      </Select>
+                                      {acceptDriverId && (
+                                        <>
+                                          <Input placeholder="Modelo Veículo" value={acceptVehicleModel} onChange={e => setAcceptVehicleModel(e.target.value)} />
+                                          <Input placeholder="Placa" value={acceptVehiclePlate} onChange={e => setAcceptVehiclePlate(e.target.value)} />
+                                          <div>
+                                            <Label className="flex items-center gap-1 text-sm"><DollarSign className="w-3 h-3 text-green-600" /> Valor a pagar ao motorista</Label>
+                                            <Input type="number" step="0.01" min="0" placeholder="R$ 0,00" value={acceptDriverPayout} onChange={e => setAcceptDriverPayout(e.target.value)} />
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -1473,11 +1614,39 @@ export default function MinhasSolicitacoesFornecedor() {
                             </Select>
                             <Input placeholder="Nome" value={driverName} onChange={e => setDriverName(e.target.value)} disabled={selectedDriverId !== 'new' && selectedDriverId !== 'casual_driver'} />
                             <Input placeholder="Telefone" value={driverPhone} onChange={e => setDriverPhone(e.target.value)} disabled={selectedDriverId !== 'new' && selectedDriverId !== 'casual_driver'} />
-                            <Input placeholder="Modelo Veículo" value={vehicleModel} onChange={e => setVehicleModel(e.target.value)} />
-                            <Input placeholder="Placa" value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} />
+
+                            {/* Veículo do motorista */}
+                            {driverVehicles.length > 0 ? (
+                              <div>
+                                <Label>Veículo</Label>
+                                <Select value={selectedDriverVehicleId} onValueChange={handleDriverVehicleSelection}>
+                                  <SelectTrigger><SelectValue placeholder="Selecione o veículo" /></SelectTrigger>
+                                  <SelectContent>
+                                    {driverVehicles.map(v => (
+                                      <SelectItem key={v.id} value={v.id}>
+                                        {v.vehicle_model} — {v.vehicle_plate}{v.is_default ? ' ★' : ''}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value="manual">Informar manualmente</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ) : null}
+
+                            <Input placeholder="Modelo Veículo" value={vehicleModel} onChange={e => setVehicleModel(e.target.value)} disabled={selectedDriverVehicleId && selectedDriverVehicleId !== 'manual' && driverVehicles.length > 0} />
+                            <Input placeholder="Placa" value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} disabled={selectedDriverVehicleId && selectedDriverVehicleId !== 'manual' && driverVehicles.length > 0} />
+
+                            {/* Valor a pagar ao motorista */}
+                            <div>
+                              <Label className="flex items-center gap-1"><DollarSign className="w-4 h-4 text-green-600" /> Valor a pagar ao motorista</Label>
+                              <Input type="number" step="0.01" min="0" placeholder="R$ 0,00" value={driverPayoutAmount} onChange={e => setDriverPayoutAmount(e.target.value)} />
+                            </div>
                         </div>
                         <DialogFooter>
-                            <Button onClick={() => handleSaveDriverInfo(false)} disabled={isSavingDriverInfo}>Salvar</Button>
+                            <Button onClick={() => handleSaveDriverInfo(false)} disabled={isSavingDriverInfo}>
+                              {isSavingDriverInfo ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                              Salvar
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,6 +56,9 @@ export default function Telemetria() {
   const [hotspots, setHotspots] = useState([]);
   const [driverReport, setDriverReport] = useState([]);
   const [activeTab, setActiveTab] = useState("monitoramento");
+  const [focusedIncidentIdx, setFocusedIncidentIdx] = useState(null);
+  const [incidentAddresses, setIncidentAddresses] = useState({});
+  const mapInstanceRef = React.useRef(null);
 
   useEffect(() => {
     loadDrivers();
@@ -76,6 +79,7 @@ export default function Telemetria() {
   useEffect(() => {
     if (selectedSession) {
       loadSessionEvents(selectedSession.id);
+      setFocusedIncidentIdx(null);
     }
   }, [selectedSession]);
 
@@ -151,6 +155,21 @@ export default function Telemetria() {
   const loadSessionEvents = async (sessionId) => {
     const events = await base44.entities.TelemetryEvent.filter({ session_id: sessionId });
     setSessionEvents(events.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)));
+    setIncidentAddresses({});
+  };
+
+  const reverseGeocode = async (lat, lng) => {
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    if (incidentAddresses[key]) return incidentAddresses[key];
+    try {
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyDpTGd0zvKbJCjo5VUGDFCk9kEGgQhOhAU&language=pt-BR`);
+      const data = await res.json();
+      const address = data.results?.[0]?.formatted_address || 'Endereço não encontrado';
+      setIncidentAddresses(prev => ({ ...prev, [key]: address }));
+      return address;
+    } catch {
+      return 'Erro ao buscar endereço';
+    }
   };
 
   const handleForceFinalize = async (sessionId) => {
@@ -326,35 +345,102 @@ export default function Telemetria() {
                     <div className="md:col-span-3">
                         <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg">Incidentes Detalhados</CardTitle>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                                    Incidentes Detalhados
+                                    <span className="text-sm font-normal text-gray-400 ml-1">(clique para ver no mapa)</span>
+                                </CardTitle>
                             </CardHeader>
                             <CardContent className="p-0">
                                 <div className="divide-y divide-gray-100">
-                                    {sessionEvents.filter(e => ['hard_brake', 'speeding', 'sharp_turn', 'phone_usage'].includes(e.type)).length > 0 ? (
-                                        sessionEvents.filter(e => ['hard_brake', 'speeding', 'sharp_turn', 'phone_usage'].includes(e.type)).map((incident, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-4 hover:bg-gray-50">
-                                                <div className="flex flex-col">
-                                                    <span className="font-medium text-gray-800 capitalize">
-                                                        {incident.type === 'hard_brake' && 'Frenagem Brusca'}
-                                                        {incident.type === 'speeding' && 'Excesso de Velocidade'}
-                                                        {incident.type === 'sharp_turn' && 'Curva Acentuada'}
-                                                        {incident.type === 'phone_usage' && 'Uso de Telefone'}
-                                                    </span>
-                                                    <span className="text-xs text-gray-500">
-                                                        {format(parseISO(incident.timestamp), "dd/MM/yyyy HH:mm:ss")}
-                                                    </span>
-                                                </div>
-                                                <div className="text-sm text-gray-700 font-medium">
-                                                    {incident.speed && `Velocidade: ${Number(incident.speed).toFixed(0)} km/h`}
-                                                    {incident.value && incident.type !== 'speeding' && ` | Valor: ${Number(incident.value).toFixed(1)}`}
-                                                </div>
+                                    {(() => {
+                                        const incidents = sessionEvents.filter(e => ['hard_brake', 'speeding', 'sharp_turn', 'phone_usage'].includes(e.type));
+                                        if (incidents.length === 0) return (
+                                            <div className="p-4 text-gray-500 text-center">
+                                                Nenhum incidente detalhado registrado nesta sessão.
                                             </div>
-                                        ))
-                                    ) : (
-                                        <div className="p-4 text-gray-500 text-center">
-                                            Nenhum incidente detalhado registrado nesta sessão.
-                                        </div>
-                                    )}
+                                        );
+                                        return incidents.map((incident, idx) => {
+                                            const hasLocation = incident.latitude && incident.longitude && (incident.latitude !== 0 || incident.longitude !== 0);
+                                            const isFocused = focusedIncidentIdx === idx;
+                                            const typeConfig = {
+                                                hard_brake: { label: 'Frenagem Brusca', color: 'bg-red-500', textColor: 'text-red-700', bgColor: 'bg-red-50', icon: '🛑' },
+                                                speeding: { label: 'Excesso de Velocidade', color: 'bg-orange-500', textColor: 'text-orange-700', bgColor: 'bg-orange-50', icon: '⚡' },
+                                                sharp_turn: { label: 'Curva Acentuada', color: 'bg-yellow-500', textColor: 'text-yellow-700', bgColor: 'bg-yellow-50', icon: '↩️' },
+                                                phone_usage: { label: 'Uso de Telefone', color: 'bg-purple-500', textColor: 'text-purple-700', bgColor: 'bg-purple-50', icon: '📱' }
+                                            };
+                                            const config = typeConfig[incident.type] || typeConfig.hard_brake;
+
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    onClick={() => {
+                                                        if (hasLocation && mapInstanceRef.current) {
+                                                            setFocusedIncidentIdx(idx);
+                                                            mapInstanceRef.current.setView([incident.latitude, incident.longitude], 17, { animate: true });
+                                                            reverseGeocode(incident.latitude, incident.longitude);
+                                                        }
+                                                    }}
+                                                    className={`flex items-center justify-between p-4 transition-all ${
+                                                        hasLocation ? 'cursor-pointer hover:bg-gray-50' : 'opacity-60'
+                                                    } ${isFocused ? config.bgColor + ' border-l-4 border-l-' + config.color.replace('bg-', '') : ''}`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-9 h-9 rounded-full ${config.color} text-white flex items-center justify-center text-lg flex-shrink-0`}>
+                                                            {config.icon}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className={`font-semibold ${config.textColor}`}>
+                                                                {config.label}
+                                                            </span>
+                                                            <span className="text-xs text-gray-500">
+                                                                {format(parseISO(incident.timestamp), "dd/MM/yyyy HH:mm:ss")}
+                                                            </span>
+                                                            {!hasLocation && (
+                                                                <span className="text-[10px] text-gray-400 italic">Sem coordenadas</span>
+                                                            )}
+                                                            {hasLocation && isFocused && incidentAddresses[`${incident.latitude.toFixed(5)},${incident.longitude.toFixed(5)}`] && (
+                                                                <span className="text-[10px] text-gray-600 mt-0.5 block">
+                                                                    📍 {incidentAddresses[`${incident.latitude.toFixed(5)},${incident.longitude.toFixed(5)}`]}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm text-gray-700 font-medium">
+                                                            {incident.speed ? `Velocidade: ${Number(incident.speed).toFixed(0)} km/h` : ''}
+                                                        </div>
+                                                        {incident.type === 'speeding' && (() => {
+                                                            let speedLimit = null;
+                                                            try { const d = JSON.parse(incident.details); speedLimit = d?.limit; } catch {}
+                                                            if (!speedLimit && incident.value && incident.speed) {
+                                                                speedLimit = incident.speed - incident.value;
+                                                            }
+                                                            const excess = speedLimit ? Number(incident.speed - speedLimit).toFixed(0) : (incident.value ? Number(incident.value).toFixed(0) : null);
+                                                            return speedLimit ? (
+                                                                <div className="text-xs mt-0.5 space-y-0.5">
+                                                                    <div className="text-red-600 font-semibold">Limite: {Number(speedLimit).toFixed(0)} km/h</div>
+                                                                    <div className="text-red-500">Excesso: +{excess} km/h</div>
+                                                                </div>
+                                                            ) : (
+                                                                excess ? <div className="text-xs text-red-500">Excesso: +{excess} km/h</div> : null
+                                                            );
+                                                        })()}
+                                                        {incident.value && incident.type !== 'speeding' && (
+                                                            <div className="text-xs text-gray-500">
+                                                                Valor: {Number(incident.value).toFixed(1)}
+                                                            </div>
+                                                        )}
+                                                        {hasLocation && (
+                                                            <div className="text-[10px] text-blue-500 mt-1 flex items-center justify-end gap-1">
+                                                                <MapPin className="w-3 h-3" /> Ver no mapa
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
                                 </div>
                             </CardContent>
                         </Card>
@@ -450,25 +536,28 @@ export default function Telemetria() {
                                         
                                         <TabsContent value="map" className="h-full mt-0">
                                             <MapContainer 
-                                                center={[0,0]} // Will update with bounds
+                                                center={[0,0]}
                                                 zoom={13} 
                                                 style={{ height: '100%', width: '100%' }}
                                                 ref={(map) => {
-                                                    if (map && sessionEvents.length > 0) {
-                                                        const validPoints = sessionEvents
-                                                            .filter(e => e.latitude && e.longitude && (e.latitude !== 0 || e.longitude !== 0))
-                                                            .map(e => [e.latitude, e.longitude]);
-                                                        
-                                                        if (validPoints.length > 0) {
-                                                            const bounds = L.latLngBounds(validPoints);
-                                                            if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
+                                                    if (map) {
+                                                        mapInstanceRef.current = map;
+                                                        if (sessionEvents.length > 0) {
+                                                            const validPoints = sessionEvents
+                                                                .filter(e => e.latitude && e.longitude && (e.latitude !== 0 || e.longitude !== 0))
+                                                                .map(e => [e.latitude, e.longitude]);
+                                                            
+                                                            if (validPoints.length > 0) {
+                                                                const bounds = L.latLngBounds(validPoints);
+                                                                if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50] });
+                                                            }
                                                         }
                                                     }
                                                 }}
                                             >
                                                 <TileLayer
-                                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
                                                 />
                                                 
                                                 <Polyline 
@@ -482,17 +571,52 @@ export default function Telemetria() {
 
                                                 {sessionEvents.map((event, idx) => {
                                                     if (['location_update', 'acceleration'].includes(event.type)) return null;
+                                                    if (!event.latitude || !event.longitude || (event.latitude === 0 && event.longitude === 0)) return null;
                                                     
                                                     const icon = incidentIcons[event.type] || incidentIcons.start;
-                                                    if (event.type === 'trip_start') return <Marker key={idx} position={[event.latitude, event.longitude]} icon={incidentIcons.start}><Popup>Início</Popup></Marker>;
-                                                    if (event.type === 'trip_end') return <Marker key={idx} position={[event.latitude, event.longitude]} icon={incidentIcons.end}><Popup>Fim</Popup></Marker>;
+                                                    if (event.type === 'trip_start') return <Marker key={idx} position={[event.latitude, event.longitude]} icon={incidentIcons.start}><Popup>🟢 Início da Viagem</Popup></Marker>;
+                                                    if (event.type === 'trip_end') return <Marker key={idx} position={[event.latitude, event.longitude]} icon={incidentIcons.end}><Popup>🏁 Fim da Viagem</Popup></Marker>;
+
+                                                    const typeLabels = {
+                                                        hard_brake: '🛑 Frenagem Brusca',
+                                                        speeding: '⚡ Excesso de Velocidade',
+                                                        sharp_turn: '↩️ Curva Acentuada',
+                                                        phone_usage: '📱 Uso de Telefone'
+                                                    };
+
+                                                    // Calcular índice do incidente na lista filtrada para matching com focusedIncidentIdx
+                                                    const incidentEvents = sessionEvents.filter(e => ['hard_brake', 'speeding', 'sharp_turn', 'phone_usage'].includes(e.type));
+                                                    const incidentIdx = incidentEvents.indexOf(event);
+                                                    const isFocused = focusedIncidentIdx === incidentIdx;
 
                                                     return (
                                                         <Marker key={idx} position={[event.latitude, event.longitude]} icon={icon}>
-                                                            <Popup>
-                                                                <div className="font-bold capitalize">{event.type.replace('_', ' ')}</div>
-                                                                <div>Velocidade: {Number(event.speed || 0).toFixed(0)} km/h</div>
-                                                                <div>{format(parseISO(event.timestamp), "HH:mm:ss")}</div>
+                                                            <Popup autoPan={true}>
+                                                                <div style={{ minWidth: '180px' }}>
+                                                                    <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>
+                                                                        {typeLabels[event.type] || event.type.replace('_', ' ')}
+                                                                    </div>
+                                                                    <div style={{ fontSize: '12px', color: '#555' }}>Velocidade: {Number(event.speed || 0).toFixed(0)} km/h</div>
+                                                                    {event.type === 'speeding' && (() => {
+                                                                        let speedLimit = null;
+                                                                        try { const d = JSON.parse(event.details); speedLimit = d?.limit; } catch {}
+                                                                        if (!speedLimit && event.value && event.speed) {
+                                                                            speedLimit = event.speed - event.value;
+                                                                        }
+                                                                        const excess = speedLimit ? Number(event.speed - speedLimit).toFixed(0) : (event.value ? Number(event.value).toFixed(0) : null);
+                                                                        return speedLimit ? (
+                                                                            <div style={{ fontSize: '12px', color: '#d32f2f', fontWeight: 'bold', marginTop: '2px' }}>
+                                                                                Limite da via: {Number(speedLimit).toFixed(0)} km/h<br/>
+                                                                                <span style={{ fontWeight: 'normal' }}>Excesso: +{excess} km/h</span>
+                                                                            </div>
+                                                                        ) : (excess ? <div style={{ fontSize: '12px', color: '#d32f2f' }}>Excesso: +{excess} km/h</div> : null);
+                                                                    })()}
+                                                                    {event.value && event.type !== 'speeding' ? <div style={{ fontSize: '12px', color: '#555' }}>Intensidade: {Number(event.value).toFixed(1)}</div> : null}
+                                                                    <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>🕒 {format(parseISO(event.timestamp), "dd/MM HH:mm:ss")}</div>
+                                                                    {incidentAddresses[`${event.latitude.toFixed(5)},${event.longitude.toFixed(5)}`] && (
+                                                                        <div style={{ fontSize: '11px', color: '#333', marginTop: '4px', fontWeight: '500' }}>📍 {incidentAddresses[`${event.latitude.toFixed(5)},${event.longitude.toFixed(5)}`]}</div>
+                                                                    )}
+                                                                </div>
                                                             </Popup>
                                                         </Marker>
                                                     )

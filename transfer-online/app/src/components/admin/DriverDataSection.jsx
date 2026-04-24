@@ -93,11 +93,25 @@ export default function DriverDataSection({
 
       if (data.origin_flight_number) summary += `✈️ ${copyText.originFlight}: ${data.origin_flight_number}\n`;
 
-      if (data.planned_stops && Array.isArray(data.planned_stops) && data.planned_stops.length > 0) {
-        data.planned_stops.forEach((stop, index) => {
-          if (!stop.address) return;
-          let stopInfo = `➡️ ${copyText.stop} ${index + 1}: ${stop.address}`;
-          if (stop.notes) stopInfo += ` (${stop.notes})`;
+      // Coletar todas as paradas (planned_stops e additional_stops) de data e trip
+      const allStops = [
+        ...(data.planned_stops || []),
+        ...(trip.planned_stops || []),
+        ...(data.additional_stops || []),
+        ...(trip.additional_stops || [])
+      ].filter((stop, index, self) => {
+        // Deduplicar por address
+        const addr = stop.address || stop.notes || '';
+        if (!addr) return false;
+        return self.findIndex(s => (s.address || s.notes || '') === addr) === index;
+      });
+
+      if (allStops.length > 0) {
+        allStops.forEach((stop, index) => {
+          const addr = stop.address || stop.notes;
+          if (!addr) return;
+          let stopInfo = `➡️ ${copyText.stop} ${index + 1}: ${addr}`;
+          if (stop.address && stop.notes) stopInfo += ` (${stop.notes})`;
           summary += `${stopInfo}\n`;
         });
       }

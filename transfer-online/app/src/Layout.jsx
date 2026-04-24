@@ -324,7 +324,7 @@ function LayoutContent({ children, currentPageName }) {
   const isClientAdmin = isCorporateUser && (user?.client_role === 'admin' || user?.client_corporate_role === 'admin_client');
   
   const supplierPages = React.useMemo(() => {
-    const pages = ['MinhasSolicitacoesFornecedor', 'GerenciarFaturamento', 'GerenciarPagamentos', 'MeusVeiculosFornecedor', 'GerenciarManutencaoFrota', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'MeusDados', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'EnviarMensagemMotoristas', 'CriarCotacaoManual', 'GerenciarCotacoes', 'GerenciarEventos', 'EventDetails', 'GerenciarLinksCompartilhados', 'PortalCorporativo', 'SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'ClientAnalytics', 'GerenciarFuncionarios', 'RelatorioFinanceiroFornecedores', 'GerenciarCoordenadores', 'ManualArquitetonico'];
+    const pages = ['MinhasSolicitacoesFornecedor', 'GerenciarFaturamento', 'GerenciarPagamentos', 'MeusVeiculosFornecedor', 'GerenciarManutencaoFrota', 'MeusMotoristas', 'GerenciarFuncionarios', 'GerenciarReceptivos', 'ReceptivosRealizadosFornecedor', 'MeusDados', 'GerenciarClientesProprios', 'MinhasViagensProprias', 'EnviarMensagemMotoristas', 'CriarCotacaoManual', 'GerenciarCotacoes', 'GerenciarEventos', 'EventDetails', 'GerenciarLinksCompartilhados', 'PortalCorporativo', 'SolicitarViagemCorporativa', 'MinhasSolicitacoes', 'ClientAnalytics', 'GerenciarFuncionarios', 'RelatorioFinanceiroFornecedores', 'GerenciarCoordenadores', 'ManualArquitetonico', 'GerenciarContasPagar'];
     if (supplierData?.features?.event_dashboard_access) pages.push('EventDashboard');
     if (supplierData?.features?.driver_tracking_access) pages.push('LocalizacaoMotoristas');
     if (supplierData?.features?.can_subcontract) pages.push('GerenciarParceiros');
@@ -744,6 +744,9 @@ function LayoutContent({ children, currentPageName }) {
       items: [
         { title: 'Gerenciar Faturamento', url: createPageUrl('GerenciarFaturamento'), icon: Receipt },
         { title: 'Pagamentos', url: createPageUrl('GerenciarPagamentos'), icon: DollarSign },
+        ...(supplierData?.features?.payables_management ? [
+          { title: 'Contas a Pagar', url: createPageUrl('GerenciarContasPagar'), icon: DollarSign }
+        ] : []),
         { title: 'Relatório Financeiro', url: createPageUrl('RelatorioFinanceiroFornecedores'), icon: BarChart3 },
       ]
     },
@@ -819,6 +822,11 @@ function LayoutContent({ children, currentPageName }) {
       title: 'Meus Documentos',
       url: createPageUrl('MeusDados') + '?tab=documents',
       icon: FileText,
+    },
+    {
+      title: 'Frota e Abastecimentos',
+      url: createPageUrl('MeusDados') + '?tab=fleet',
+      icon: Car,
     },
     {
       title: 'Meus Dados',

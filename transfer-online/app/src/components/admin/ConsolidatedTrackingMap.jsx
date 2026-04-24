@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MapPin, Navigation, Eye, EyeOff, Maximize2, Loader2 } from 'lucide-react';
+import { MapPin, Navigation, Eye, EyeOff, Maximize2, Loader2, Gauge } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 export default function ConsolidatedTrackingMap({ trips = [] }) {
@@ -300,20 +300,37 @@ export default function ConsolidatedTrackingMap({ trips = [] }) {
                             <div className="truncate font-medium">{trip.request_number || trip.booking_number}</div>
                             <div className="truncate">👤 {trip.passenger_name}</div>
                             
-                            <Badge className={`text-[10px] px-1.5 py-0 h-5 ${
-                              trip.driver_trip_status?.includes('caminho') ? 'bg-blue-100 text-blue-800' : 
-                              trip.driver_trip_status === 'passageiro_embarcou' ? 'bg-green-100 text-green-800' : 
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {formatStatus(trip.driver_trip_status)}
-                            </Badge>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={`text-[10px] px-1.5 py-0 h-5 ${
+                                trip.driver_trip_status?.includes('caminho') ? 'bg-blue-100 text-blue-800' : 
+                                trip.driver_trip_status === 'passageiro_embarcou' ? 'bg-green-100 text-green-800' : 
+                                'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {formatStatus(trip.driver_trip_status)}
+                              </Badge>
+
+                              {(() => {
+                                const speed = trip.current_speed !== undefined && trip.current_speed !== null ? Math.round(trip.current_speed) : null;
+                                return (
+                                  <Badge className={`text-[10px] px-1.5 py-0 h-5 font-bold ${
+                                    speed === null 
+                                      ? 'bg-gray-100 text-gray-500'
+                                      : speed === 0 
+                                        ? 'bg-gray-100 text-gray-600' 
+                                        : speed > 100 
+                                          ? 'bg-red-100 text-red-700' 
+                                          : 'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    <Gauge className="w-3 h-3 mr-0.5" />
+                                    {speed !== null ? `${speed} km/h` : '-- km/h'}
+                                  </Badge>
+                                );
+                              })()}
+                            </div>
 
                             {trip.location_last_updated_at && (
-                              <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                {trip.current_speed !== undefined && trip.current_speed !== null && (
-                                  <span className="font-semibold text-blue-600">{Math.round(trip.current_speed)} km/h</span>
-                                )}
-                                <span>Atualizado: {format(parseISO(trip.location_last_updated_at), 'HH:mm')}</span>
+                              <div className="text-[10px] text-gray-400">
+                                Atualizado: {format(parseISO(trip.location_last_updated_at), 'HH:mm')}
                               </div>
                             )}
                             

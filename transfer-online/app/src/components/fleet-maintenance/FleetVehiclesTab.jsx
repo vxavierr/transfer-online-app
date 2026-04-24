@@ -27,7 +27,7 @@ const initialForm = {
   notes: ''
 };
 
-export default function FleetVehiclesTab({ vehicles, vehicleTypes, onSave, onDelete }) {
+export default function FleetVehiclesTab({ vehicles, vehicleTypes, onSave, onDelete, driverVehicles = [], drivers = [] }) {
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState(initialForm);
   const [editingId, setEditingId] = React.useState(null);
@@ -111,6 +111,47 @@ export default function FleetVehiclesTab({ vehicles, vehicleTypes, onSave, onDel
           );
         })}
       </div>
+
+      {/* Veículos dos Motoristas Associados (somente leitura) */}
+      {driverVehicles.length > 0 && (
+        <div className="mt-8 space-y-4">
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
+            <Car className="h-5 w-5 text-gray-500" />
+            Veículos dos Motoristas ({driverVehicles.length})
+          </h3>
+          <p className="text-sm text-gray-500 -mt-2">Veículos cadastrados pelos motoristas associados ao seu fornecedor. Apenas para consulta.</p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {driverVehicles.map((dv) => {
+              const driverData = drivers.find(d => d.id === dv.driver_id);
+              return (
+                <Card key={dv.id} className="border-dashed border-gray-300 bg-gray-50/50">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle className="text-lg">{dv.vehicle_model}</CardTitle>
+                        <p className="mt-1 text-sm text-gray-500">{dv.vehicle_plate} {dv.vehicle_color ? `• ${dv.vehicle_color}` : ''}</p>
+                      </div>
+                      <Badge className={dv.active === false ? 'bg-red-100 text-red-800' : dv.registration_blocked ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'}>
+                        {dv.active === false ? 'Inativo' : dv.registration_blocked ? 'Bloqueado' : 'Ativo'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm text-gray-600">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <p>Motorista: <strong>{driverData?.name || 'Desconhecido'}</strong></p>
+                      <p>Ano: <strong>{dv.vehicle_year || '—'}</strong></p>
+                      {dv.registration_expiry && (
+                        <p>Licenciamento: <strong>{dv.registration_expiry}</strong></p>
+                      )}
+                      {dv.is_default && <p><Badge className="bg-blue-100 text-blue-800">Veículo padrão</Badge></p>}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">

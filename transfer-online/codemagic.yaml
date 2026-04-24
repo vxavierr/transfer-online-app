@@ -1,58 +1,9 @@
 # codemagic.yaml — Transfer Online
-# Pipeline unificado: Android (Play Store) + iOS (App Store)
-# Trigger: qualquer push na branch main
+# Pipeline iOS → TestFlight
+# Trigger: push em main ou disparo manual
 # Docs: https://docs.codemagic.io/yaml-quick-start/building-an-ionic-app/
 
 workflows:
-
-  # ─── Android → Play Store ──────────────────────────────────────────────────
-  android-play-store:
-    name: "Android → Play Store"
-    instance_type: mac_mini_m2
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-    environment:
-      node: "20.0.0"
-      java: "17"
-      groups:
-        - keystore_credentials   # KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
-        - google_play            # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-    scripts:
-      - name: Install dependencies
-        script: |
-          cd app
-          npm ci
-      - name: Build web
-        script: |
-          cd app
-          npm run build
-      - name: Capacitor sync Android
-        script: |
-          cd app
-          npx cap sync android
-      - name: Build Android AAB (release)
-        script: |
-          cd app/android
-          ./gradlew bundleRelease
-      - name: Sign AAB
-        script: |
-          jarsigner \
-            -keystore $KEYSTORE_PATH \
-            -storepass $KEYSTORE_PASSWORD \
-            -keypass $KEY_PASSWORD \
-            app/android/app/build/outputs/bundle/release/app-release.aab \
-            $KEY_ALIAS
-    artifacts:
-      - app/android/app/build/outputs/bundle/release/app-release.aab
-    publishing:
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: internal          # Internal track para teste → promover para produção no Console
-        submit_as_draft: false
 
   # ─── iOS → App Store (TestFlight) ──────────────────────────────────────────
   ios-app-store:

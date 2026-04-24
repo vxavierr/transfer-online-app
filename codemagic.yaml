@@ -33,10 +33,10 @@ workflows:
         script: |
           cd transfer-online/app
           npm run build
-      - name: Capacitor sync iOS
+      - name: Capacitor copy iOS
         script: |
           cd transfer-online/app
-          npx cap sync ios
+          npx cap copy ios
       - name: Install CocoaPods
         script: |
           cd transfer-online/app/ios/App

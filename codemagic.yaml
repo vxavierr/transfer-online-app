@@ -1,0 +1,83 @@
+# codemagic.yaml — Transfer Online
+# Pipeline iOS → TestFlight
+# Trigger: push em main
+
+workflows:
+
+  ios-app-store:
+    name: "iOS → App Store"
+    instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    environment:
+      node: "20.0.0"
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "com.transferonline.app"
+        XCODE_WORKSPACE: "transfer-online/app/ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+      groups:
+        - ios_signing
+        - app_store_connect
+        - apple_credentials
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd transfer-online/app
+          npm ci
+      - name: Build web
+        script: |
+          cd transfer-online/app
+          npm run build
+      - name: Capacitor sync iOS
+        script: |
+          cd transfer-online/app
+          npx cap sync ios
+      - name: Install CocoaPods
+        script: |
+          cd transfer-online/app/ios/App
+          pod install
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files $BUNDLE_ID \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Increment build number
+        script: |
+          cd transfer-online/app/ios/App
+          LATEST=$(app-store-connect get-latest-testflight-build-number $BUNDLE_ID 2>/dev/null || echo 0)
+          agvtool new-version -all $((LATEST + 1))
+      - name: Build and archive
+        script: |
+          xcodebuild \
+            -workspace $XCODE_WORKSPACE \
+            -scheme $XCODE_SCHEME \
+            -configuration Release \
+            -archivePath /tmp/App.xcarchive \
+            -destination "generic/platform=iOS" \
+            archive
+      - name: Export IPA
+        script: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath /tmp/App.xcarchive \
+            -exportPath /tmp/App \
+            -exportOptionsPlist transfer-online/app/ios/ExportOptions.plist
+    artifacts:
+      - /tmp/App/**/*.ipa
+      - /tmp/App.xcarchive
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true
+        submit_to_app_store: false

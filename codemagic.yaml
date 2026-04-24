@@ -22,7 +22,6 @@ workflows:
         XCODE_WORKSPACE: "transfer-online/app/ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       groups:
-        - ios_signing
         - app_store_connect
         - apple_credentials
     scripts:

@@ -37,6 +37,11 @@ workflows:
         script: |
           cd transfer-online/app
           npx cap copy ios
+      - name: Patch background-geolocation SPM for Capacitor 8
+        script: |
+          cd transfer-online/app
+          sed -i '' 's|from: "7.0.0"|"7.0.0"..<"9.0.0"|' node_modules/@capacitor-community/background-geolocation/Package.swift
+          cat node_modules/@capacitor-community/background-geolocation/Package.swift | grep -A1 "capacitor-swift-pm"
       - name: Set up code signing
         script: |
           keychain initialize

@@ -55,24 +55,15 @@ workflows:
           cd transfer-online/app/ios/App
           LATEST=$(app-store-connect get-latest-testflight-build-number $BUNDLE_ID 2>/dev/null || echo 0)
           agvtool new-version -all $((LATEST + 1))
-      - name: Build and archive
+      - name: Build and archive (IPA)
         script: |
-          xcodebuild \
-            -project $XCODE_PROJECT \
-            -scheme $XCODE_SCHEME \
-            -configuration Release \
-            -archivePath /tmp/App.xcarchive \
-            -destination "generic/platform=iOS" \
-            DEVELOPMENT_TEAM=$APPLE_TEAM_ID \
-            CODE_SIGN_STYLE=Manual \
-            archive
-      - name: Export IPA
-        script: |
-          xcodebuild \
-            -exportArchive \
-            -archivePath /tmp/App.xcarchive \
-            -exportPath /tmp/App \
-            -exportOptionsPlist transfer-online/app/ios/ExportOptions.plist
+          xcode-project build-ipa \
+            --project $XCODE_PROJECT \
+            --scheme $XCODE_SCHEME \
+            --archive-directory /tmp/App.xcarchive
+          mkdir -p /tmp/App
+          mv build/ios/ipa/*.ipa /tmp/App/ 2>/dev/null || true
+          find . -name "*.ipa" -exec cp {} /tmp/App/ \; 2>/dev/null || true
     artifacts:
       - /tmp/App/**/*.ipa
       - /tmp/App.xcarchive

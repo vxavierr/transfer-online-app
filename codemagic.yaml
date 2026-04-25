@@ -37,10 +37,6 @@ workflows:
         script: |
           cd transfer-online/app
           npx cap copy ios
-      - name: Install CocoaPods
-        script: |
-          cd transfer-online/app/ios/App
-          pod install
       - name: Set up code signing
         script: |
           keychain initialize

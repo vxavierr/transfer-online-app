@@ -19,7 +19,7 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "com.transferonline.app"
-        XCODE_WORKSPACE: "transfer-online/app/ios/App/App.xcworkspace"
+        XCODE_PROJECT: "transfer-online/app/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
       groups:
         - app_store_connect
@@ -53,7 +53,7 @@ workflows:
       - name: Build and archive
         script: |
           xcodebuild \
-            -workspace $XCODE_WORKSPACE \
+            -project $XCODE_PROJECT \
             -scheme $XCODE_SCHEME \
             -configuration Release \
             -archivePath /tmp/App.xcarchive \

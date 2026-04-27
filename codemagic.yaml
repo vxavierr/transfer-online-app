@@ -60,13 +60,11 @@ workflows:
           xcode-project build-ipa \
             --project $XCODE_PROJECT \
             --scheme $XCODE_SCHEME \
-            --archive-directory /tmp/App.xcarchive
-          mkdir -p /tmp/App
-          mv build/ios/ipa/*.ipa /tmp/App/ 2>/dev/null || true
-          find . -name "*.ipa" -exec cp {} /tmp/App/ \; 2>/dev/null || true
+            --archive-directory build/ios/xcarchive \
+            --ipa-directory build/ios/ipa
     artifacts:
-      - /tmp/App/**/*.ipa
-      - /tmp/App.xcarchive
+      - build/ios/ipa/*.ipa
+      - build/ios/xcarchive
     publishing:
       app_store_connect:
         api_key: $APP_STORE_CONNECT_PRIVATE_KEY

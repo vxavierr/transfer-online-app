@@ -730,15 +730,7 @@ public class LocationTelemetryForegroundService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent contentPI;
-        if (Build.VERSION.SDK_INT >= 34) {
-            android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
-            options.setPendingIntentBackgroundActivityStartMode(
-                android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
-            contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags, options.toBundle());
-        } else {
-            contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
-        }
+        PendingIntent contentPI = PendingIntent.getActivity(this, ARRIVAL_NOTIF_ID + 1, openApp, flags);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, ARRIVAL_CHANNEL_ID)
                 .setContentTitle(title)

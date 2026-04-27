@@ -65,5 +65,20 @@
 	<!-- Push Notifications -->
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>Receba alertas sobre suas viagens e atualizações importantes do Transfer Online.</string>
+
+	<!-- Photo Library — required by Capacitor Camera plugin SDK -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>O Transfer Online precisa acessar suas fotos para anexar comprovantes e documentos a registros de viagens.</string>
+
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>O Transfer Online precisa salvar imagens na sua galeria para registrar comprovantes de viagens.</string>
+
+	<!-- Camera — required by Capacitor Camera plugin -->
+	<key>NSCameraUsageDescription</key>
+	<string>O Transfer Online usa a câmera para tirar fotos de documentos, comprovantes e ocorrências durante as viagens.</string>
+
+	<!-- Microphone — referenced by some Capacitor plugins -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O Transfer Online pode usar o microfone para gravar mensagens de voz relacionadas a ocorrências durante as viagens.</string>
 </dict>
 </plist>

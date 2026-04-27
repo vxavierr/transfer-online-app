@@ -44,25 +44,15 @@ workflows:
           cat node_modules/@capacitor-community/background-geolocation/Package.swift | grep -A1 "capacitor-swift-pm"
       - name: Set up code signing
         script: |
-          echo "=== keychain initialize ==="
-          keychain initialize 2>&1
-          echo "exit code: $?"
-          echo "=== fetch-signing-files ==="
+          keychain initialize
+          ssh-keygen -m PEM -f /tmp/codemagic_cert_key -N "" -t rsa -b 2048
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --platform IOS \
             --type IOS_APP_STORE \
-            --create \
-            --verbose 2>&1
-          echo "exit code: $?"
-          echo "=== list profiles dir ==="
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>&1 || echo "no profiles dir"
-          ls -la ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/ 2>&1 || echo "no xcode profiles dir"
-          echo "=== keychain add-certificates ==="
-          keychain add-certificates 2>&1
-          echo "exit code: $?"
-          echo "=== xcode-project use-profiles ==="
-          xcode-project use-profiles --verbose 2>&1
-          echo "exit code: $?"
+            --certificate-key-path /tmp/codemagic_cert_key \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Increment build number
         script: |
           cd transfer-online/app/ios/App

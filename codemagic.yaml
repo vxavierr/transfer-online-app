@@ -44,7 +44,6 @@ workflows:
           cat node_modules/@capacitor-community/background-geolocation/Package.swift | grep -A1 "capacitor-swift-pm"
       - name: Set up code signing
         script: |
-          set -e
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --platform IOS \

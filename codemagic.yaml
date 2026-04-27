@@ -44,12 +44,23 @@ workflows:
           cat node_modules/@capacitor-community/background-geolocation/Package.swift | grep -A1 "capacitor-swift-pm"
       - name: Set up code signing
         script: |
+          set -e
+          echo "BUNDLE_ID=$BUNDLE_ID"
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          echo "Issuer ID set: $([ -n "$APP_STORE_CONNECT_ISSUER_ID" ] && echo yes || echo no)"
+          echo "Key ID set: $([ -n "$APP_STORE_CONNECT_KEY_IDENTIFIER" ] && echo yes || echo no)"
+          echo "Private key set: $([ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ] && echo yes || echo no)"
           keychain initialize
-          app-store-connect fetch-signing-files $BUNDLE_ID \
+          app-store-connect fetch-signing-files \
+            --bundle-id "$BUNDLE_ID" \
+            --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+            --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
             --type IOS_APP_STORE \
-            --create
+            --create \
+            --verbose
           keychain add-certificates
-          xcode-project use-profiles
+          xcode-project use-profiles --verbose
       - name: Increment build number
         script: |
           cd transfer-online/app/ios/App

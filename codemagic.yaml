@@ -45,11 +45,10 @@ workflows:
       - name: Set up code signing
         script: |
           keychain initialize
-          ssh-keygen -m PEM -f /tmp/codemagic_cert_key -N "" -t rsa -b 2048
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --platform IOS \
             --type IOS_APP_STORE \
-            --certificate-key=@file:/tmp/codemagic_cert_key \
+            --certificate-key=@env:CERT_PRIVATE_KEY \
             --create
           keychain add-certificates
           xcode-project use-profiles

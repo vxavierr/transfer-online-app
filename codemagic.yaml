@@ -24,6 +24,7 @@ workflows:
       groups:
         - app_store_connect
         - apple_credentials
+        - app_env
     scripts:
       - name: Install dependencies
         script: |

@@ -299,26 +299,36 @@ export default function TelemetryTracker({
   };
 
   const startGPSMonitoring = async () => {
-    const options = {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
-    };
+    // Pedir permissão antes de qualquer uso de GPS (iOS requer isso explicitamente)
+    const permStatus = await GeoService.requestPermission();
+    if (permStatus === 'denied') {
+      onGpsStatusChange?.('denied');
+      return;
+    }
+
+    const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
     try {
-      // On native: FGS pushes GPS via window.updateTelemetryLocation (primary)
-      // watchPosition acts as fallback when FGS bridge isn't active yet
-      const id = await GeoService.watchPosition(
-        handlePositionUpdate,
-        (err) => {
-          console.warn('[TelemetryTracker] GPS Error:', err);
-          if (err.code === 1) {
-            onGpsStatusChange?.('denied');
-          }
-          // Timeout (code 3): watch continues automatically
-        },
-        options
-      );
+      let id;
+      if (!TelemetryForeground) {
+        // iOS: usar background tracking (CLLocationManager com allowsBackgroundLocationUpdates)
+        await GeoService.requestBackgroundPermission();
+        id = await GeoService.startBackgroundTracking(handlePositionUpdate, {
+          backgroundMessage: 'Rastreando sua localização durante a viagem',
+          backgroundTitle: 'Transfer Online',
+          distanceFilter: 5,
+        });
+      } else {
+        // Android: TelemetryForeground cuida do background; watchPosition é fallback
+        id = await GeoService.watchPosition(
+          handlePositionUpdate,
+          (err) => {
+            console.warn('[TelemetryTracker] GPS Error:', err);
+            if (err.code === 1) onGpsStatusChange?.('denied');
+          },
+          options
+        );
+      }
       watchIdRef.current = id;
       onGpsStatusChange?.('granted');
     } catch (err) {
@@ -329,7 +339,11 @@ export default function TelemetryTracker({
 
   const stopGPSMonitoring = () => {
     if (watchIdRef.current !== null) {
-      GeoService.clearWatch(watchIdRef.current);
+      if (!TelemetryForeground) {
+        GeoService.stopBackgroundTracking(watchIdRef.current);
+      } else {
+        GeoService.clearWatch(watchIdRef.current);
+      }
       watchIdRef.current = null;
     }
   };
@@ -339,7 +353,7 @@ export default function TelemetryTracker({
     const posTimestamp = position.timestamp || position.coords.timestamp || Date.now();
     const now = Date.now();
 
-    if (accuracy && accuracy > 50) return; // Rejeitar GPS com acurácia ruim
+    if (accuracy && accuracy > 100) return; // Rejeitar GPS com acurácia ruim (100m aceita primeiro fix iOS ~65m)
     
     // Convert m/s to km/h
     const currentSpeedKmh = (speedMps || 0) * 3.6;

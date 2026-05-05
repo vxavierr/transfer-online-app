@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { base44 } from '@/api/base44Client';
 import { GeoService, isNativePlatform, SensorService } from '@/native';
 import TelemetryForeground from '@/native/bridge/TelemetryForegroundBridge';
@@ -310,7 +311,7 @@ export default function TelemetryTracker({
 
     try {
       let id;
-      if (!TelemetryForeground) {
+      if (Capacitor.getPlatform() === 'ios') {
         // iOS: usar background tracking (CLLocationManager com allowsBackgroundLocationUpdates)
         await GeoService.requestBackgroundPermission();
         id = await GeoService.startBackgroundTracking(handlePositionUpdate, {
@@ -339,7 +340,7 @@ export default function TelemetryTracker({
 
   const stopGPSMonitoring = () => {
     if (watchIdRef.current !== null) {
-      if (!TelemetryForeground) {
+      if (Capacitor.getPlatform() === 'ios') {
         GeoService.stopBackgroundTracking(watchIdRef.current);
       } else {
         GeoService.clearWatch(watchIdRef.current);
@@ -353,7 +354,9 @@ export default function TelemetryTracker({
     const posTimestamp = position.timestamp || position.coords.timestamp || Date.now();
     const now = Date.now();
 
-    if (accuracy && accuracy > 100) return; // Rejeitar GPS com acurácia ruim (100m aceita primeiro fix iOS ~65m)
+    const isFirstFix = !lastPositionRef.current;
+    const accuracyThreshold = (Capacitor.getPlatform() === 'ios' && isFirstFix) ? 500 : 100;
+    if (accuracy && accuracy > accuracyThreshold) return;
     
     // Convert m/s to km/h
     const currentSpeedKmh = (speedMps || 0) * 3.6;

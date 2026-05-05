@@ -88,7 +88,13 @@ const GeoService = {
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 3000); // timeout de segurança
         BackgroundGeolocation.addWatcher(
-          { requestPermissions: true, stale: true, distanceFilter: 999999 },
+          {
+            requestPermissions: true,
+            backgroundMessage: 'Necessário para rastreamento durante viagens',
+            backgroundTitle: 'Transfer Online',
+            stale: true,
+            distanceFilter: 999999,
+          },
           async () => {
             clearTimeout(timeout);
             resolve();

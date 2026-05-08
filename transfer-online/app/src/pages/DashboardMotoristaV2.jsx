@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserService } from '@/native';
+import { BrowserService, isNativePlatform } from '@/native';
 import { useLocation } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -40,6 +40,7 @@ import DashboardGrid from '@/components/dashboard/DashboardGrid';
 import { Suspense } from 'react';
 import MetaTags from '@/components/seo/MetaTags';
 import TelemetryTracker from '@/components/telemetry/TelemetryTracker';
+import LocationDisclosureModal, { hasAcceptedLocationDisclosure } from '@/components/disclosure/LocationDisclosureModal';
 
 // Lazy load
 const DriverMessages = React.lazy(() => import('@/components/driver/DriverMessages'));
@@ -68,6 +69,19 @@ export default function DashboardMotoristaV2() {
   const [blockingImpediment, setBlockingImpediment] = useState(null);
   const [viewingTripId, setViewingTripId] = useState(null);
   const [dismissedAlerts, setDismissedAlerts] = useState([]);
+  // 'checking' enquanto verifica StorageService (async); 'show' renderiza modal; 'hide' libera dashboard.
+  // No web (não-nativo) o disclosure não se aplica — Google Play / App Store só exigem em apps nativos.
+  const [disclosureGate, setDisclosureGate] = useState(() => isNativePlatform() ? 'checking' : 'hide');
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let cancelled = false;
+    hasAcceptedLocationDisclosure().then((accepted) => {
+      if (cancelled) return;
+      setDisclosureGate(accepted ? 'hide' : 'show');
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // State for controlling tabs
   const [activeTab, setActiveTab] = useState("waiting");
@@ -103,8 +117,11 @@ export default function DashboardMotoristaV2() {
   };
 
   useEffect(() => {
-    // Solicitar permissão de GPS no início se ainda não foi concedida/solicitada
-    const askForGPS = () => {
+    // Solicitar permissão de GPS no início se ainda não foi concedida/solicitada.
+    // CRITICAL: só pode pedir GPS depois do Prominent Disclosure ser aceito (Google Play requirement).
+    const askForGPS = async () => {
+      const accepted = await hasAcceptedLocationDisclosure();
+      if (!accepted) return;
       const hasPermission = localStorage.getItem('gps_permission_granted') === 'true';
       if (!hasPermission && 'geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -549,6 +566,26 @@ export default function DashboardMotoristaV2() {
     setDismissedAlerts(newDismissedAlerts);
     localStorage.setItem('dismissedDriverAlerts', JSON.stringify(newDismissedAlerts));
   };
+
+  // Loading enquanto consulta o StorageService (não renderiza nem modal nem dashboard).
+  if (disclosureGate === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (disclosureGate === 'show') {
+    return (
+      <LocationDisclosureModal
+        onAccept={() => setDisclosureGate('hide')}
+      />
+    );
+  }
 
   if (isCheckingAuth) {
     return (

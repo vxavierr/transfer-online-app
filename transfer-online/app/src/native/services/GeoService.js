@@ -31,6 +31,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
+import { logGpsDiagnostic, setSentryUser } from '@/lib/sentry';
 
 /**
  * Obtém o plugin BackgroundGeolocation via registerPlugin.
@@ -82,7 +83,8 @@ const GeoService = {
     if (!Capacitor.isNativePlatform()) return 'granted';
     const BackgroundGeolocation = getBackgroundGeolocation();
     if (!BackgroundGeolocation) return 'denied';
-    console.log('[GPS-DIAG] requestBackgroundPermission chamado — plataforma:', Capacitor.getPlatform(), '— plugin:', BackgroundGeolocation);
+    logGpsDiagnostic('requestBackgroundPermission chamado', { platform: Capacitor.getPlatform(), pluginPresent: !!BackgroundGeolocation });
+    // TODO: chamar setSentryUser({ id, username, ip_address: '{{auto}}' }) aqui se o user_id estiver disponível no contexto
 
     let watcherId = null;
     try {
@@ -205,7 +207,7 @@ const GeoService = {
       return this.watchPosition(callback, null, options);
     }
 
-    console.log('[GPS-DIAG] Registrando addWatcher — plataforma:', Capacitor.getPlatform(), '— plugin:', BackgroundGeolocation);
+    logGpsDiagnostic('Registrando addWatcher', { platform: Capacitor.getPlatform(), pluginPresent: !!BackgroundGeolocation });
     return BackgroundGeolocation.addWatcher(
       {
         backgroundMessage: options.backgroundMessage ?? 'Rastreando sua localização',
@@ -215,17 +217,17 @@ const GeoService = {
         distanceFilter: options.distanceFilter ?? 10, // metros
       },
       (location, error) => {
-        console.log('[GPS-DIAG] Callback disparou — ts:', new Date().toISOString(), '{ location:', location, ', error:', error, '}');
+        logGpsDiagnostic('Callback disparou', { ts: new Date().toISOString(), hasLocation: !!location, hasError: !!error });
         if (error) {
-          console.error('[GPS-DIAG] Erro no addWatcher:', error);
+          logGpsDiagnostic('Erro no addWatcher', { code: error.code, message: error.message ?? String(error) });
           if (error.code === 'NOT_AUTHORIZED') {
-            console.error('[GPS-DIAG] Permissão negada — verifique Configurações > Privacidade > Localização');
+            logGpsDiagnostic('Permissão negada — verifique Configurações > Privacidade > Localização', { code: error.code });
             return;
           }
           return;
         }
         if (location) {
-          console.log('[GPS-DIAG] Localização recebida — lat:', location.latitude, 'lon:', location.longitude, 'precisão:', location.accuracy);
+          logGpsDiagnostic('Localização recebida', { lat: location.latitude, lon: location.longitude, accuracy: location.accuracy });
           callback(location);
         }
       }

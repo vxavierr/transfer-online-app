@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-05-12T08:30:00-03:00",
+  "context": "default",
+  "project": "transfer-online",
+  "session_name": "[transfer]fix/ios-gps-platform-selector",
+  "status": "paused_awaiting_test",
+  "current_branch": "release/1.0.4",
+  "latest_commit": "5878b16",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Story 1.1 — first iOS GPS attempt",
+      "status": "merged_but_ineffective",
+      "commit": "86916e9",
+      "pr": 1,
+      "note": "Bug de seletor !TelemetryForeground — código nunca executou no iOS"
+    },
+    {
+      "id": 2,
+      "name": "Deep research — 3 agents paralelos (runtime, architect, analyst)",
+      "status": "done",
+      "outputs": [
+        "docs/research/ios-gps-research-runtime.md",
+        "docs/research/ios-gps-research-architect.md",
+        "docs/research/ios-gps-research-analyst.md"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Story 1.2 — fix seletor + permissão Always + filtro adaptativo",
+      "status": "merged",
+      "commit": "5878b16",
+      "pr": 2,
+      "note": "Android verificadamente intocado via git diff"
+    },
+    {
+      "id": 4,
+      "name": "Codemagic build #27",
+      "status": "completed",
+      "build_id": "69fa6225e39b8db419333c3c",
+      "app_store_connect_build": "1d880e7b-3ad3-491e-ba75-d730d63e1db8",
+      "ipa_size": "3.03 MB",
+      "note": "post-processing failed = falso positivo (só afeta grupo externo)"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 5,
+      "name": "Fernando: Resolver Export Compliance no App Store Connect",
+      "status": "not_started",
+      "owner": "fernando",
+      "blocking": true
+    },
+    {
+      "id": 6,
+      "name": "Fernando: Adicionar build #27 ao grupo de teste interno",
+      "status": "not_started",
+      "owner": "fernando",
+      "blocking": true
+    },
+    {
+      "id": 7,
+      "name": "Fernando: Desinstalar/reinstalar app no iPhone + testar GPS foreground e background",
+      "status": "not_started",
+      "owner": "fernando",
+      "blocking": true,
+      "note": "Reinstalar é importante pra resetar estado de permissão iOS"
+    },
+    {
+      "id": 8,
+      "name": "Aguardar feedback do teste para decidir próximo passo",
+      "status": "not_started",
+      "owner": "joao",
+      "blocking": true
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Aguardando teste manual do Fernando no iPhone",
+      "type": "human_action",
+      "workaround": "Nenhum — precisa de device físico"
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "Resolver Export Compliance no App Store Connect para build #27",
+      "context": "Sem isso, build não vai pra testers internos",
+      "blocking": true,
+      "url": "https://appstoreconnect.apple.com/apps/6763598494/testflight/ios"
+    },
+    {
+      "action": "Adicionar build #27 ao grupo de teste interno",
+      "context": "Sem isso, Fernando não vê a build no TestFlight",
+      "blocking": true
+    },
+    {
+      "action": "Fernando: desinstalar e reinstalar app + testar",
+      "context": "Reinstalar reseta o estado de permissão do iOS",
+      "blocking": true
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Não trocar plugin ainda — fix do seletor primeiro",
+      "rationale": "Pesquisa identificou seletor como bug REAL, não o plugin. Trocar plugin sem testar fix do seletor seria gasto desnecessário."
+    },
+    {
+      "decision": "Filtro de acurácia 500m no primeiro fix iOS",
+      "rationale": "CLLocationManager precisa 'warmar' — primeiro fix vem 150-300m. 500m dá margem. Depois aperta pra 100m."
+    },
+    {
+      "decision": "Build Codemagic manual (não automático)",
+      "rationale": "Usuário corrigiu: documentação antiga estava errada. Codemagic NÃO dispara automaticamente no merge."
+    },
+    {
+      "decision": "Restrição absoluta: Android intocável",
+      "rationale": "Usuário explícito. @qa valida via git diff Android."
+    }
+  ],
+  "critical_anti_patterns": [
+    {
+      "name": "Truthy proxy do registerPlugin",
+      "severity": "blocking",
+      "description": "Capacitor.registerPlugin() retorna proxy truthy mesmo sem código nativo na plataforma",
+      "mitigation": "Sempre usar Capacitor.getPlatform() === 'ios' para diferenciar plataforma"
+    },
+    {
+      "name": "QA PASS sem teste runtime",
+      "severity": "blocking",
+      "description": "Story 1.1 teve QA PASS em todos os AC, mas código nunca rodou no iOS",
+      "mitigation": "QA deve declarar escopo (code review vs. device test) ou incluir teste device como AC"
+    },
+    {
+      "name": "Codemagic auto-trigger assumption",
+      "severity": "advisory",
+      "description": "Documentação antiga dizia 'merge dispara build' — falso, precisa rodar manual",
+      "mitigation": "Confirmar trigger via UI antes de declarar build em andamento"
+    },
+    {
+      "name": "git add -A em monorepo",
+      "severity": "blocking",
+      "description": "Muitos arquivos pré-existentes modificados (Android FGS, uhuru-os) — commit em massa pega tudo",
+      "mitigation": "Sempre adicionar arquivos individualmente por path"
+    },
+    {
+      "name": "Android tocado em story iOS",
+      "severity": "blocking",
+      "description": "Toda mudança iOS deve ser estritamente condicional",
+      "mitigation": "@qa valida via git diff --stat -- 'app/android/' antes de aprovar (deve ser vazio)"
+    }
+  ],
+  "infrastructure_state": {
+    "git_branch": "release/1.0.4",
+    "codemagic_build_27": {
+      "status": "completed",
+      "post_processing": "failed_but_false_positive",
+      "ipa_uploaded": true,
+      "app_store_processing": "done",
+      "external_testing_submission": "failed_missing_beta_app_info"
+    },
+    "fernando_iphone": "ainda nao testou",
+    "plan_b_status": "preparado mas nao iniciado"
+  },
+  "plan_b": {
+    "trigger": "Se Fernando reportar que GPS ainda nao funciona",
+    "story": "Story 1.3",
+    "action": "Trocar @capacitor-community/background-geolocation@1.2.26 por @capgo/background-geolocation@8.0.32",
+    "rationale": "@capgo é oficialmente Capacitor 8 (atual é Capacitor 7 com patch sed)",
+    "estimated_effort": "2-4h",
+    "plan_c": "Plugin Swift custom (1-2 dias) OU @transistorsoft ($399 one-time)"
+  },
+  "next_action": "Perguntar ao Joao: 'O Fernando ja testou o build #27 no iPhone?'",
+  "context_notes": "Sessao longa de iOS GPS — 2 stories (1.1 e 1.2), pesquisa multi-agente, build #27 publicado. Aguardando teste manual no device. Se falhar, Story 1.3 troca plugin."
+}

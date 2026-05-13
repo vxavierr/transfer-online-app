@@ -228,7 +228,22 @@ const GeoService = {
         }
         if (location) {
           logGpsDiagnostic('Localização recebida', { lat: location.latitude, lon: location.longitude, accuracy: location.accuracy });
-          callback(location);
+          // Normalize flat background-geolocation format → { coords, timestamp }
+          // @capacitor-community/background-geolocation returns flat { latitude, longitude, bearing, time }
+          // handlePositionUpdate expects @capacitor/geolocation format: { coords: { latitude, heading }, timestamp }
+          const normalized = {
+            coords: {
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracy: location.accuracy ?? null,
+              speed: location.speed ?? null,
+              heading: location.bearing ?? null,
+              altitude: location.altitude ?? null,
+              altitudeAccuracy: location.altitudeAccuracy ?? null,
+            },
+            timestamp: location.time ?? Date.now(),
+          };
+          callback(normalized);
         }
       }
     );

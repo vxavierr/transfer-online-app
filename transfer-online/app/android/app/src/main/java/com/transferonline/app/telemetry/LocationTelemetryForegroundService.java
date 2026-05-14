@@ -485,6 +485,13 @@ public class LocationTelemetryForegroundService extends Service {
             return;
         }
 
+        // Guard: skip if executor was already shutdown (service is being destroyed).
+        // Without this, a Handler callback racing onDestroy() throws RejectedExecutionException.
+        if (flushExecutor.isShutdown() || flushExecutor.isTerminated()) {
+            Log.w(TAG, "flushBuffer: executor is shutdown, skipping");
+            return;
+        }
+
         List<TelemetryEvent> toSend;
         synchronized (buffer) {
             if (buffer.isEmpty()) return;
@@ -497,30 +504,39 @@ public class LocationTelemetryForegroundService extends Service {
         final TelemetryConfig cfg = config;
         final List<TelemetryEvent> batch = toSend;
 
-        flushExecutor.submit(() -> {
-            try {
-                JSONArray events = new JSONArray();
-                for (TelemetryEvent e : batch) {
-                    events.put(e.toJSON());
-                }
+        try {
+            flushExecutor.submit(() -> {
+                try {
+                    JSONArray events = new JSONArray();
+                    for (TelemetryEvent e : batch) {
+                        events.put(e.toJSON());
+                    }
 
-                JSONObject stats = new JSONObject();
-                if (!batch.isEmpty()) {
-                    TelemetryEvent last = batch.get(batch.size() - 1);
-                    stats.put("lastSpeedKmh", last.speed);
-                }
+                    JSONObject stats = new JSONObject();
+                    if (!batch.isEmpty()) {
+                        TelemetryEvent last = batch.get(batch.size() - 1);
+                        stats.put("lastSpeedKmh", last.speed);
+                    }
 
-                TelemetryHttpClient.postBatch(
-                        cfg.url,
-                        cfg.token,
-                        cfg.sessionId,
-                        events,
-                        stats
-                );
-            } catch (Exception e) {
-                Log.e(TAG, "flushBuffer error: " + e.getMessage(), e);
+                    TelemetryHttpClient.postBatch(
+                            cfg.url,
+                            cfg.token,
+                            cfg.sessionId,
+                            events,
+                            stats
+                    );
+                } catch (Exception e) {
+                    Log.e(TAG, "flushBuffer error: " + e.getMessage(), e);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            // Race: executor shutdown between the isShutdown() check above and submit().
+            // Restore the batch to the head of the buffer so events are not lost.
+            Log.w(TAG, "flushBuffer: executor rejected task, restoring batch to buffer");
+            synchronized (buffer) {
+                buffer.addAll(0, batch);
             }
-        });
+        }
     }
 
     // ------------------------------------------------------------------ //

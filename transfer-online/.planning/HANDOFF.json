@@ -1,0 +1,72 @@
+{
+  "version": "1.2",
+  "timestamp": "2026-05-12T12:13:00-03:00",
+  "context": "default",
+  "project": "transfer-online",
+  "session_name": "[transfer]feat/ios-gps-capgo-swap",
+  "status": "awaiting_codemagic_29_and_fernando_diagnostic",
+  "current_branch": "feat/ios-gps-capgo-swap",
+  "base_branch": "release/1.0.4",
+  "latest_commit": "89d7e1f",
+  "remote_url": "https://github.com/vxavierr/transfer-online-app/tree/feat/ios-gps-capgo-swap",
+  "story": {
+    "id": "1.3",
+    "path": "docs/stories/1.3.story.md",
+    "status": "Ready",
+    "phase_implemented": "AC1 only (diagnostic logs)",
+    "po_score": "10/10 after refinement (was 8.5/10)"
+  },
+  "completed_this_session": [
+    { "id": 1, "task": "Read HANDOFF.json + STATE — resume context", "status": "done" },
+    { "id": 2, "task": "Fernando reported build #27 failed (zero points)", "status": "done" },
+    { "id": 3, "task": "Confirm Capacitor 8.2.0 already installed (no bump needed)", "status": "done" },
+    { "id": 4, "task": "@sm drafted Story 1.3 with 8 ACs", "status": "done" },
+    { "id": 5, "task": "@po validated (8.5/10 NO-GO → 2 fixes in AC6/AC7)", "status": "done" },
+    { "id": 6, "task": "@sm applied 2 fixes (AC6 manual gate, AC7 GPS point definition)", "status": "done" },
+    { "id": 7, "task": "@po revalidated (GO confirmed)", "status": "done" },
+    { "id": 8, "task": "@dev implemented AC1 — verbose [GPS-DIAG] logs in GeoService.js", "status": "done", "commit": "0d6aaf2" },
+    { "id": 9, "task": "@devops pushed feat/ios-gps-capgo-swap to origin (commit 0d6aaf2)", "status": "done" },
+    { "id": 9.5, "task": "Discovery: console.log impraticável (João sem Mac, Fernando leigo) — escolha de Sentry como mecanismo de captura remota", "status": "done" },
+    { "id": 9.6, "task": "João criou projeto Sentry (transfer-online) e gerou DSN", "status": "done" },
+    { "id": 9.7, "task": "@dev integrou Sentry (commit 3a8b355) — @sentry/capacitor@4.0.0 + @sentry/react@10.43.0, lê VITE_SENTRY_DSN, função logGpsDiagnostic substitui console.log", "status": "done" },
+    { "id": 9.8, "task": "João adicionou VITE_SENTRY_DSN como env var no Codemagic", "status": "done" },
+    { "id": 9.9, "task": "@devops pushed commit Sentry 3a8b355 to origin", "status": "done" },
+    { "id": 10.1, "task": "Build #28 falhou — Sentry check-siblings.js rejeitou @sentry/react@^10.43.0 (range semver não aceito)", "status": "done" },
+    { "id": 10.2, "task": "@dev pinnou @sentry/react a 10.43.0 exato (removeu ^) + regenerou package-lock.json", "status": "done", "commit": "89d7e1f" },
+    { "id": 10.3, "task": "@devops pushed fix commit 89d7e1f para origin (feat/ios-gps-capgo-swap)", "status": "done" }
+  ],
+  "sentry": {
+    "project": "transfer-online",
+    "dsn": "https://de399a815dfa493aae52b878b27bc288@o4509898497327104.ingest.us.sentry.io/4511376950558720",
+    "dashboard": "https://sentry.io/issues/",
+    "filter_tag": "category:gps-diag",
+    "sdks": ["@sentry/capacitor@4.0.0", "@sentry/react@10.43.0"]
+  },
+  "remaining_tasks": [
+    { "id": 10, "task": "João: trigger Codemagic build #29 manually via web UI for feat/ios-gps-capgo-swap (Sentry version fix já incluído)", "owner": "joao", "blocking": true },
+    { "id": 11, "task": "Fernando: install via TestFlight, drive 2-3 min — sem outra ação necessária (logs vão automático pro Sentry)", "owner": "fernando", "blocking": true },
+    { "id": 12, "task": "Analyze logs no painel Sentry (sentry.io/issues, filtro tag category:gps-diag) — if callback fires → cancel swap; if not → proceed with AC2", "owner": "joao+orchestrator", "blocking": true },
+    { "id": 13, "task": "(conditional) @dev implements AC2-AC8 — swap plugin + remove sed patch + bump version", "owner": "dev", "blocking": false },
+    { "id": 14, "task": "(conditional) @qa qa-gate Story 1.3", "owner": "qa", "blocking": false },
+    { "id": 15, "task": "(conditional) @devops push + trigger Codemagic build #29 release", "owner": "devops", "blocking": false }
+  ],
+  "decisions_session_2": [
+    { "decision": "@sentry/react deve ser versão exata sem ^ no package.json", "rationale": "check-siblings.js do @sentry/capacitor lê o spec do package.json e rejeita range semver. Descoberto via build #28 failure log." }
+  ],
+  "decisions_this_session": [
+    { "decision": "Plano B activated — plugin swap", "rationale": "Build #27 with Story 1.2 selector fix failed on device (zero points). Selector fix was necessary but not sufficient." },
+    { "decision": "Phase 1 (AC1 diagnostic) before Phase 2 (swap)", "rationale": "Avoid wasting 2-4h swap work if the real issue is permission/buffer/backend, not the plugin itself. Cost ~30min, eliminates ambiguity." },
+    { "decision": "No Capacitor bump needed", "rationale": "app/package.json confirms @capacitor/core@^8.2.0, @capacitor/ios@^8.3.0 — already on Capacitor 8. Previous handoff was wrong saying 'Capacitor 7 with sed patch'." },
+    { "decision": "Root cause hypothesis for build #27 failure", "rationale": "Capacitor 8.0.2+ moved call.getString/getBool/reject/resolve behind $NonescapableTypes Swift experimental feature flag (issue ionic-team/capacitor#8333). @capacitor-community plugin uses these at Plugin.swift:90/93/106/156/219 — likely fails silently. @capgo fork is rebuilt for Capacitor 8." },
+    { "decision": "AC6 validation is manual by @qa, not CI/CD", "rationale": "Project has no CI/CD gate. @qa runs git diff --stat app/android/ as first step of qa-gate." },
+    { "decision": "AC7 defines 1 GPS point operationally", "rationale": "1 GPS point = 1 location callback with lat/lon/accuracy valid. Each [GPS-DIAG] log line counts as 1. Avoids Fernando vs @dev counting differently." }
+  ],
+  "critical_anti_patterns": [
+    { "name": "Truthy proxy from registerPlugin", "mitigation": "Use Capacitor.getPlatform() === 'ios'" },
+    { "name": "QA PASS without runtime test", "mitigation": "Story 1.3 AC7 makes device test a Done gate" },
+    { "name": "Android touched in iOS story", "mitigation": "AC6 — @qa runs git diff --stat app/android/ before verdict" },
+    { "name": "git add -A in monorepo", "mitigation": "Add files individually by path (uhuru-os sibling has unrelated changes)" }
+  ],
+  "next_action": "João triggers Codemagic build #29 manually for branch feat/ios-gps-capgo-swap (Sentry fix 89d7e1f incluído — npm ci vai passar agora). Fernando instala via TestFlight e dirige 2-3 min. Logs aparecem em tempo real em sentry.io/issues — João analisa e decide Fase 2.",
+  "context_notes": "Phase 1 (AC1 diagnostic) shipped to remote. Phase 2 (AC2-AC8 swap) is conditional on Fernando's diagnostic result. Team 'story-1-3-ios-gps' still alive — @sm/@po/@dev/@devops idle, can be reactivated. Story 1.3 path: docs/stories/1.3.story.md. All anti-patterns from previous stories addressed in this story's ACs."
+}

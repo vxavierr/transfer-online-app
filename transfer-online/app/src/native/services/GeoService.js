@@ -31,6 +31,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
+import { logGpsDiagnostic, setSentryUser } from '@/lib/sentry';
 
 /**
  * Obtém o plugin BackgroundGeolocation via registerPlugin.
@@ -82,6 +83,8 @@ const GeoService = {
     if (!Capacitor.isNativePlatform()) return 'granted';
     const BackgroundGeolocation = getBackgroundGeolocation();
     if (!BackgroundGeolocation) return 'denied';
+    logGpsDiagnostic('requestBackgroundPermission chamado', { platform: Capacitor.getPlatform(), pluginPresent: !!BackgroundGeolocation });
+    // TODO: chamar setSentryUser({ id, username, ip_address: '{{auto}}' }) aqui se o user_id estiver disponível no contexto
 
     let watcherId = null;
     try {
@@ -204,6 +207,7 @@ const GeoService = {
       return this.watchPosition(callback, null, options);
     }
 
+    logGpsDiagnostic('Registrando addWatcher', { platform: Capacitor.getPlatform(), pluginPresent: !!BackgroundGeolocation });
     return BackgroundGeolocation.addWatcher(
       {
         backgroundMessage: options.backgroundMessage ?? 'Rastreando sua localização',
@@ -213,15 +217,34 @@ const GeoService = {
         distanceFilter: options.distanceFilter ?? 10, // metros
       },
       (location, error) => {
+        logGpsDiagnostic('Callback disparou', { ts: new Date().toISOString(), hasLocation: !!location, hasError: !!error });
         if (error) {
+          logGpsDiagnostic('Erro no addWatcher', { code: error.code, message: error.message ?? String(error) });
           if (error.code === 'NOT_AUTHORIZED') {
-            console.error('[GeoService] Background GPS: permissão negada');
+            logGpsDiagnostic('Permissão negada — verifique Configurações > Privacidade > Localização', { code: error.code });
             return;
           }
-          console.error('[GeoService] Background GPS error:', error);
           return;
         }
-        callback(location);
+        if (location) {
+          logGpsDiagnostic('Localização recebida', { lat: location.latitude, lon: location.longitude, accuracy: location.accuracy });
+          // Normalize flat background-geolocation format → { coords, timestamp }
+          // @capacitor-community/background-geolocation returns flat { latitude, longitude, bearing, time }
+          // handlePositionUpdate expects @capacitor/geolocation format: { coords: { latitude, heading }, timestamp }
+          const normalized = {
+            coords: {
+              latitude: location.latitude,
+              longitude: location.longitude,
+              accuracy: location.accuracy ?? null,
+              speed: location.speed ?? null,
+              heading: location.bearing ?? null,
+              altitude: location.altitude ?? null,
+              altitudeAccuracy: location.altitudeAccuracy ?? null,
+            },
+            timestamp: location.time ?? Date.now(),
+          };
+          callback(normalized);
+        }
       }
     );
   },
